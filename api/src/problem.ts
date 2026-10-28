@@ -1,8 +1,8 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
 import { json } from "./http";
-import { SLUG, fetchProblem } from "./problems/leetcode";
+import { SLUG } from "./problems/leetcode";
 import type { Problem } from "./problems/types";
-import { dynamoPredictionStore, isActive, type PredictionStore } from "./problems/prediction";
+import { isActive, type PredictionStore } from "./problems/prediction";
 
 export interface ProblemDeps {
   fetchProblem: (slug: string) => Promise<Problem | null>;
@@ -32,9 +32,3 @@ export const makeProblemHandler =
     const latest = await deps.predictions.latest(problem.id);
     return json(200, { problem, prediction: latest && isActive(latest, deps.now()) ? latest : null });
   };
-
-export const handler = makeProblemHandler({
-  fetchProblem,
-  predictions: dynamoPredictionStore(process.env.TABLE_NAME ?? ""),
-  now: Date.now,
-});

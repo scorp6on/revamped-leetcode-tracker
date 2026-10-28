@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import type { Catalog, Difficulty } from "../../../api/src/catalog/types";
+import type { Schedule } from "../../../api/src/review/types";
 import { DifficultyBadge } from "../components/DifficultyBadge";
+import { shortDate } from "../queue/useSchedule";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { cn } from "../lib/utils";
@@ -14,7 +16,10 @@ import {
   toParams,
   type CatalogQuery,
   type SortKey,
+  type Status,
 } from "./filter";
+
+const STATUS_LABEL: Record<Status, string> = { "not-attempted": "—", attempted: "Attempted", solved: "Solved" };
 
 const selectClass =
   "h-11 rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -38,8 +43,17 @@ const SearchIcon = () => (
 // scroll position can be restored onto it.
 let loaded: Catalog | undefined;
 
-export function Problems() {
+export function Problems({ schedules }: { schedules: Schedule[] }) {
   const [catalog, setCatalog] = useState<Catalog | "loading" | "error">(loaded ?? "loading");
+  const bySlug = useMemo(() => new Map(schedules.map((s) => [s.slug, s])), [schedules]);
+  const statusOf = useMemo(
+    () =>
+      (slug: string): Status => {
+        const s = bySlug.get(slug);
+        return !s ? "not-attempted" : s.solved ? "solved" : "attempted";
+      },
+    [bySlug],
+  );
   const [params, setParams] = useSearchParams();
   const { query, page } = useMemo(() => fromParams(params), [params]);
   // replace: typing a search shouldn't add a Back-button step per keystroke.
@@ -55,8 +69,8 @@ export function Problems() {
   }, []);
 
   const rows = useMemo(
-    () => (typeof catalog === "object" ? filterCatalog(catalog.problems, query) : []),
-    [catalog, query],
+    () => (typeof catalog === "object" ? filterCatalog(catalog.problems, query, statusOf) : []),
+    [catalog, query, statusOf],
   );
   const tagOptions = useMemo(
     () =>
@@ -199,9 +213,12 @@ export function Problems() {
                       <DifficultyBadge difficulty={p.difficulty} />
                     </td>
                     <td className="px-4 py-3 font-mono text-[13px] text-muted-foreground">{p.ac.toFixed(1)}%</td>
-                    {/* Filled in by M4, once attempts are recorded. */}
-                    <td className="px-4 py-3 text-muted-foreground">—</td>
-                    <td className="px-4 py-3 font-mono text-[13px] text-muted-foreground">—</td>
+                    <td className={cn("px-4 py-3", statusOf(p.slug) === "not-attempted" && "text-muted-foreground")}>
+                      {STATUS_LABEL[statusOf(p.slug)]}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[13px] text-muted-foreground">
+                      {bySlug.has(p.slug) ? shortDate(bySlug.get(p.slug)!.due) : "—"}
+                    </td>
                   </tr>
                 ))}
                 {rows.length === 0 && (

@@ -1,23 +1,13 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
-import { json } from "./http";
+import { json, readBody } from "./http";
 import { SLUG } from "./problems/leetcode";
-import { dynamoPredictionStore, type PredictionStore } from "./problems/prediction";
+import type { PredictionStore } from "./problems/prediction";
 import { MAX_PREDICTION_LENGTH } from "./problems/types";
 
 export interface PredictDeps {
   predictions: Pick<PredictionStore, "save">;
   now: () => number;
 }
-
-const readBody = (event: APIGatewayProxyEventV2): Record<string, unknown> => {
-  if (!event.body) return {};
-  const raw = event.isBase64Encoded ? Buffer.from(event.body, "base64").toString() : event.body;
-  try {
-    return JSON.parse(raw) ?? {};
-  } catch {
-    return {};
-  }
-};
 
 // The page locks a prediction once it's saved; with a single user, the server doesn't re-check that.
 export const makePredictHandler =
@@ -35,8 +25,3 @@ export const makePredictHandler =
     await predictions.save(prediction);
     return json(201, { prediction });
   };
-
-export const handler = makePredictHandler({
-  predictions: dynamoPredictionStore(process.env.TABLE_NAME ?? ""),
-  now: Date.now,
-});

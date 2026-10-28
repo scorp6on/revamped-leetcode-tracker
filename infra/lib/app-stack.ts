@@ -30,12 +30,21 @@ export class AppStack extends cdk.Stack {
     const removalPolicy =
       props.stage === "prod" ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
 
-    // Single table (decision #28). Indexes are added in the milestones that need them.
+    // Single table (decision #28). GSI1 is overloaded: attempts sit in its ATTEMPTS "drawer" by time,
+    // schedules in its DUE drawer by due date. DynamoDB adds only one index per update, so new
+    // access patterns get new drawers rather than new indexes.
     const table = new dynamodb.TableV2(this, "Table", {
       partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING },
       sortKey: { name: "SK", type: dynamodb.AttributeType.STRING },
       billing: dynamodb.Billing.onDemand(),
       removalPolicy,
+      globalSecondaryIndexes: [
+        {
+          indexName: "GSI1",
+          partitionKey: { name: "GSI1PK", type: dynamodb.AttributeType.STRING },
+          sortKey: { name: "GSI1SK", type: dynamodb.AttributeType.STRING },
+        },
+      ],
     });
 
     // Seed the item the health check reads.
@@ -88,7 +97,6 @@ export class AppStack extends cdk.Stack {
     );
 
     const logout = fn("LogoutFn", "logout.ts");
-    const me = fn("MeFn", "me.ts");
 
     const authorizerFn = fn("AuthorizerFn", "authorizer.ts");
     canReadSecret(authorizerFn, "jwt-secret");
@@ -117,24 +125,37 @@ export class AppStack extends cdk.Stack {
     route("/api/health", apigw.HttpMethod.GET, health, true);
     route("/api/login", apigw.HttpMethod.POST, login, true);
     route("/api/logout", apigw.HttpMethod.POST, logout, true);
-    route("/api/me", apigw.HttpMethod.GET, me);
 
-    // Problem view (M3). Each Lambda gets only the one DynamoDB action it needs, on PROBLEM# keys.
-    const problemKeys = (fn: lambda.IFunction, action: string) =>
-      fn.addToRolePolicy(
-        new iam.PolicyStatement({
-          actions: [action],
-          resources: [table.tableArn],
-          conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["PROBLEM#*"] } },
-        }),
-      );
-    // Waits on LeetCode for the statement, which can be slow.
-    const problem = fn("ProblemFn", "problem.ts", { timeout: cdk.Duration.seconds(10) });
-    problemKeys(problem, "dynamodb:Query");
-    const predict = fn("PredictFn", "predict.ts");
-    problemKeys(predict, "dynamodb:PutItem");
-    route("/api/problems/{slug}", apigw.HttpMethod.GET, problem);
-    route("/api/predictions", apigw.HttpMethod.POST, predict);
+    // One API Lambda for every app route (#26, #49), so it stays warm across pages.
+    // Waits on LeetCode for problem statements, which can be slow.
+    const apiFn = fn("ApiFn", "api.ts", { timeout: cdk.Duration.seconds(10) });
+    // Practice data only: PROBLEM# items, and the DUE / ATTEMPTS drawers of GSI1. Never AUTH or HEALTH.
+    // A transaction is checked as its parts (Put, Update, ConditionCheck) on each item.
+    apiFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "dynamodb:GetItem",
+          "dynamodb:Query",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:ConditionCheckItem",
+        ],
+        resources: [table.tableArn],
+        conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["PROBLEM#*"] } },
+      }),
+    );
+    apiFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["dynamodb:Query"],
+        resources: [`${table.tableArn}/index/GSI1`],
+        conditions: { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["DUE", "ATTEMPTS"] } },
+      }),
+    );
+    route("/api/me", apigw.HttpMethod.GET, apiFn);
+    route("/api/problems/{slug}", apigw.HttpMethod.GET, apiFn);
+    route("/api/predictions", apigw.HttpMethod.POST, apiFn);
+    route("/api/attempts", apigw.HttpMethod.POST, apiFn);
+    route("/api/schedule", apigw.HttpMethod.GET, apiFn);
 
     const site = new s3.Bucket(this, "Site", {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,

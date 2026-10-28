@@ -6,6 +6,7 @@ import { api } from "../api";
 import { DifficultyBadge } from "../components/DifficultyBadge";
 import { Button, buttonVariants } from "../components/ui/button";
 import { Label } from "../components/ui/label";
+import { RecordAttempt } from "./RecordAttempt";
 
 type Load = "loading" | "not-found" | "error" | { problem: Problem; prediction: Prediction | null };
 // A prediction is locked as soon as you open LeetCode; the save runs alongside the new tab.
@@ -64,6 +65,8 @@ function ProblemView({ problem, prediction }: { problem: Problem; prediction: Pr
   );
   const leetCodeUrl = `https://leetcode.com/problems/${problem.slug}/`;
   const [showTopics, setShowTopics] = useState(false);
+  // A recorded attempt claims the prediction, so the panel starts fresh for the next attempt.
+  const [panel, setPanel] = useState({ key: 0, saved: prediction });
 
   return (
     <>
@@ -104,7 +107,8 @@ function ProblemView({ problem, prediction }: { problem: Problem; prediction: Pr
       ) : (
         <>
           {statement && <div className="statement" dangerouslySetInnerHTML={{ __html: statement }} />}
-          <PredictionPanel problem={problem} saved={prediction} leetCodeUrl={leetCodeUrl} />
+          <PredictionPanel key={panel.key} problem={problem} saved={panel.saved} leetCodeUrl={leetCodeUrl} />
+          <RecordAttempt problem={problem} onRecorded={() => setPanel(({ key }) => ({ key: key + 1, saved: null }))} />
         </>
       )}
     </>
