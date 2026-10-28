@@ -6,12 +6,15 @@ import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as events from "aws-cdk-lib/aws-events";
+import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction, type NodejsFunctionProps } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import * as cr from "aws-cdk-lib/custom-resources";
+import * as triggers from "aws-cdk-lib/triggers";
 import type { Construct } from "constructs";
 
 interface AppStackProps extends cdk.StackProps {
@@ -125,11 +128,22 @@ export class AppStack extends cdk.Stack {
 
     // One domain for the app and the API: /api/* goes to API Gateway, everything else to S3.
     const apiDomain = cdk.Fn.select(2, cdk.Fn.split("/", api.apiEndpoint));
+    // App routes like /problems/two-sum aren't files: serve index.html and let the router take over.
+    // Only on the S3 behavior, so /api/* responses (e.g. the authorizer's 403) pass through untouched.
+    const spaRewrite = new cloudfront.Function(this, "SpaRewrite", {
+      runtime: cloudfront.FunctionRuntime.JS_2_0,
+      code: cloudfront.FunctionCode.fromInline(
+        "function handler(event) { var r = event.request; if (r.uri.indexOf('.') === -1) { r.uri = '/index.html'; } return r; }",
+      ),
+    });
     const distribution = new cloudfront.Distribution(this, "Cdn", {
       defaultRootObject: "index.html",
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(site),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        functionAssociations: [
+          { function: spaRewrite, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST },
+        ],
       },
       additionalBehaviors: {
         "/api/*": {
@@ -147,6 +161,27 @@ export class AppStack extends cdk.Stack {
       sources: [s3deploy.Source.asset(path.join(repoRoot, "web/dist"))],
       destinationBucket: site,
       distribution,
+      // data/ is written by the Catalog Lambda; without this, every web deploy would delete it.
+      exclude: ["data/*"],
+    });
+
+    // Catalog (decision #29): LeetCode's public problem list → s3://site/data/catalog.json.
+    const catalogFn = fn("CatalogFn", "catalog.ts", {
+      timeout: cdk.Duration.minutes(3),
+      memorySize: 256,
+      environment: { SITE_BUCKET: site.bucketName },
+    });
+    site.grantPut(catalogFn, "data/*");
+
+    new events.Rule(this, "WeeklyCatalog", {
+      schedule: events.Schedule.rate(cdk.Duration.days(7)),
+      targets: [new targets.LambdaFunction(catalogFn)],
+    });
+
+    // Also runs during a deploy whenever its code changes (including the first deploy).
+    new triggers.Trigger(this, "CatalogOnDeploy", {
+      handler: catalogFn,
+      timeout: cdk.Duration.minutes(3),
     });
 
     new cdk.CfnOutput(this, "SiteUrl", { value: `https://${distribution.distributionDomainName}` });
