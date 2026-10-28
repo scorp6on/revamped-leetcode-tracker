@@ -1,12 +1,14 @@
 import * as path from "node:path";
 import * as cdk from "aws-cdk-lib";
 import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
+import { HttpLambdaAuthorizer, HttpLambdaResponseType } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
-import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import { NodejsFunction, type NodejsFunctionProps } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import * as cr from "aws-cdk-lib/custom-resources";
@@ -48,19 +50,71 @@ export class AppStack extends cdk.Stack {
       installLatestAwsSdk: false, // putItem is in Lambda's built-in SDK
     });
 
-    const health = new NodejsFunction(this, "HealthFn", {
-      entry: path.join(repoRoot, "api/src/health.ts"),
-      runtime: lambda.Runtime.NODEJS_22_X,
-      environment: { TABLE_NAME: table.tableName },
-    });
+    // Secrets are written by `npm run set-password` (CloudFormation can't create SecureStrings).
+    const paramPrefix = `/leetcode-tracker/${props.stage}`;
+    const canReadSecret = (fn: lambda.IFunction, name: "password-hash" | "jwt-secret") =>
+      fn.addToRolePolicy(
+        new iam.PolicyStatement({
+          actions: ["ssm:GetParameter"],
+          resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter${paramPrefix}/${name}`],
+        }),
+      );
+
+    const fn = (id: string, file: string, extra: Partial<NodejsFunctionProps> = {}) =>
+      new NodejsFunction(this, id, {
+        entry: path.join(repoRoot, "api/src", file),
+        runtime: lambda.Runtime.NODEJS_22_X,
+        environment: { TABLE_NAME: table.tableName, PARAM_PREFIX: paramPrefix },
+        ...extra,
+      });
+
+    const health = fn("HealthFn", "health.ts");
     table.grantReadData(health);
 
-    const api = new apigw.HttpApi(this, "Api");
-    api.addRoutes({
-      path: "/api/health",
-      methods: [apigw.HttpMethod.GET],
-      integration: new HttpLambdaIntegration("HealthIntegration", health),
+    // bcrypt is deliberately slow; more memory means more CPU, so the check stays well under a second.
+    const login = fn("LoginFn", "login.ts", { memorySize: 512, timeout: cdk.Duration.seconds(10) });
+    canReadSecret(login, "password-hash");
+    canReadSecret(login, "jwt-secret");
+    // The login Lambda may only touch the lockout item, never practice data.
+    login.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["dynamodb:GetItem", "dynamodb:PutItem"],
+        resources: [table.tableArn],
+        conditions: { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["AUTH"] } },
+      }),
+    );
+
+    const logout = fn("LogoutFn", "logout.ts");
+    const me = fn("MeFn", "me.ts");
+
+    const authorizerFn = fn("AuthorizerFn", "authorizer.ts");
+    canReadSecret(authorizerFn, "jwt-secret");
+    const authorizer = new HttpLambdaAuthorizer("CookieAuthorizer", authorizerFn, {
+      responseTypes: [HttpLambdaResponseType.SIMPLE],
+      // No Cookie header at all → API Gateway answers 401 without running the authorizer.
+      identitySource: ["$request.header.Cookie"],
+      resultsCacheTtl: cdk.Duration.seconds(0),
     });
+
+    const api = new apigw.HttpApi(this, "Api");
+    const route = (
+      routePath: string,
+      method: apigw.HttpMethod,
+      handler: lambda.IFunction,
+      isPublic = false,
+    ) =>
+      api.addRoutes({
+        path: routePath,
+        methods: [method],
+        integration: new HttpLambdaIntegration(`${handler.node.id}Integration`, handler),
+        ...(isPublic ? {} : { authorizer }),
+      });
+
+    // Public routes: everything else must go through the authorizer.
+    route("/api/health", apigw.HttpMethod.GET, health, true);
+    route("/api/login", apigw.HttpMethod.POST, login, true);
+    route("/api/logout", apigw.HttpMethod.POST, logout, true);
+    route("/api/me", apigw.HttpMethod.GET, me);
 
     const site = new s3.Bucket(this, "Site", {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,

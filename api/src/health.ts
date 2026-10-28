@@ -1,6 +1,7 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, type GetCommandOutput } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyResultV2 } from "aws-lambda";
+import { json } from "./http";
 
 // The one item the infra stack seeds so we can prove a real DynamoDB read works.
 export const HEALTH_KEY = { PK: "HEALTH", SK: "HEALTH" };
@@ -19,12 +20,6 @@ export const makeHandler =
       return json(503, { ok: false, db: "unreachable" });
     }
   };
-
-const json = (statusCode: number, body: unknown): APIGatewayProxyResultV2 => ({
-  statusCode,
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify(body),
-});
 
 export const handler = makeHandler(
   DynamoDBDocumentClient.from(new DynamoDBClient({})),

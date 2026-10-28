@@ -1,0 +1,87 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+/* `dark:` utilities apply when <html> has the .dark class (set by theme.ts). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Monochrome neutrals (decision #40); difficulty is the only color. */
+:root {
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --subtle: #f5f5f5;
+  --border: #e5e5e5;
+  --muted-foreground: #737373;
+  --primary: #171717;
+  --primary-foreground: #fafafa;
+  --ring: #a1a1a1;
+
+  --easy: #15803d;
+  --easy-bg: #f0fdf4;
+  --easy-border: #bbf7d0;
+  --medium: #b45309;
+  --medium-bg: #fffbeb;
+  --medium-border: #fde68a;
+  --hard: #b91c1c;
+  --hard-bg: #fef2f2;
+  --hard-border: #fecaca;
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #fafafa;
+  --subtle: #171717;
+  --border: #262626;
+  --muted-foreground: #a1a1a1;
+  --primary: #fafafa;
+  --primary-foreground: #171717;
+  --ring: #525252;
+
+  --easy: #4ade80;
+  --easy-bg: #052e16;
+  --easy-border: #14532d;
+  --medium: #fbbf24;
+  --medium-bg: #451a03;
+  --medium-border: #78350f;
+  --hard: #f87171;
+  --hard-bg: #450a0a;
+  --hard-border: #7f1d1d;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-subtle: var(--subtle);
+  --color-border: var(--border);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-ring: var(--ring);
+  --color-easy: var(--easy);
+  --color-easy-bg: var(--easy-bg);
+  --color-easy-border: var(--easy-border);
+  --color-medium: var(--medium);
+  --color-medium-bg: var(--medium-bg);
+  --color-medium-border: var(--medium-border);
+  --color-hard: var(--hard);
+  --color-hard-bg: var(--hard-bg);
+  --color-hard-border: var(--hard-border);
+
+  --font-sans: "Geist Variable", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground font-sans text-sm antialiased;
+  }
+}

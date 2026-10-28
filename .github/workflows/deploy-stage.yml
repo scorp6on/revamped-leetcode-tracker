@@ -40,3 +40,8 @@ jobs:
           echo "Checking $url/api/health"
           curl -fsS --retry 5 --retry-delay 10 --retry-all-errors "$url/api/health" | tee health.json
           grep -q '"ok":true' health.json
+
+          echo "Checking that $url/api/me is locked without a login"
+          status=$(curl -s -o /dev/null -w '%{http_code}' "$url/api/me")
+          echo "status $status"
+          test "$status" = "401"
