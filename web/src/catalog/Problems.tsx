@@ -34,8 +34,12 @@ const SearchIcon = () => (
   </svg>
 );
 
+// Kept after the first load, so coming back from a problem renders the list at once and the
+// scroll position can be restored onto it.
+let loaded: Catalog | undefined;
+
 export function Problems() {
-  const [catalog, setCatalog] = useState<Catalog | "loading" | "error">("loading");
+  const [catalog, setCatalog] = useState<Catalog | "loading" | "error">(loaded ?? "loading");
   const [params, setParams] = useSearchParams();
   const { query, page } = useMemo(() => fromParams(params), [params]);
   // replace: typing a search shouldn't add a Back-button step per keystroke.
@@ -43,9 +47,10 @@ export function Problems() {
   const setPage = (p: number) => setView(query, p);
 
   useEffect(() => {
+    if (loaded) return;
     fetch("/data/catalog.json")
       .then((res) => (res.ok ? (res.json() as Promise<Catalog>) : Promise.reject(res.status)))
-      .then(setCatalog)
+      .then((c) => setCatalog((loaded = c)))
       .catch(() => setCatalog("error"));
   }, []);
 

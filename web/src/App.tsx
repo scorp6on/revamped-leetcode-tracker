@@ -5,6 +5,7 @@ import { AppHeader } from "./components/AppHeader";
 import { Home } from "./Home";
 import { Login } from "./Login";
 import { ProblemPage } from "./problem/ProblemPage";
+import { ScrollMemory } from "./ScrollMemory";
 import { useTheme } from "./theme";
 
 type Session = "checking" | "in" | "out";
@@ -36,6 +37,7 @@ export function App() {
         onLogout={logout}
       />
       {session === "out" && <Login onLoggedIn={() => setSession("in")} />}
+      {session === "in" && <ScrollMemory />}
       {session === "in" && (
         <Routes>
           <Route path="/" element={<Home />} />
