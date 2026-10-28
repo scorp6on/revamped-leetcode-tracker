@@ -1,0 +1,22 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency: deploy
+
+jobs:
+  dev:
+    uses: ./.github/workflows/deploy-stage.yml
+    with:
+      stage: dev
+  prod:
+    needs: dev # only after dev deployed and passed its smoke test
+    uses: ./.github/workflows/deploy-stage.yml
+    with:
+      stage: prod # the prod environment requires your approval in GitHub

@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  id-token: write # lets the job request a short-lived AWS credential via OIDC
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build -w web
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/leettracker-deploy-dev
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Show infrastructure changes
+        working-directory: infra
+        run: npx cdk diff LeetTracker-dev
