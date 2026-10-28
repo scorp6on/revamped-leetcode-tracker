@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogEntry } from "../../../api/src/catalog/types";
-import { PAGE_SIZE, emptyQuery, filterCatalog, pageOf } from "./filter";
+import { PAGE_SIZE, emptyQuery, filterCatalog, fromParams, pageOf, toParams } from "./filter";
 
 const p = (id: string, title: string, difficulty: CatalogEntry["difficulty"], ac: number, tags: string[] = []) => ({
   id,
@@ -54,5 +54,22 @@ describe("pageOf", () => {
     const rows = Array.from({ length: PAGE_SIZE + 3 }, (_, i) => i);
     expect(pageOf(rows, 0)).toHaveLength(PAGE_SIZE);
     expect(pageOf(rows, 1)).toEqual([PAGE_SIZE, PAGE_SIZE + 1, PAGE_SIZE + 2]);
+  });
+});
+
+describe("URL params", () => {
+  it("round-trips a query and page", () => {
+    const query = { text: "two", difficulties: ["Easy", "Hard"], tag: "array", status: "solved", sort: "ac", descending: true } as const;
+    const params = toParams({ ...query, difficulties: [...query.difficulties] }, 2);
+    expect(params.toString()).toBe("q=two&d=Easy%2CHard&tag=array&status=solved&sort=ac&desc=1&page=3");
+    expect(fromParams(params)).toEqual({ query: { ...query, difficulties: ["Easy", "Hard"] }, page: 2 });
+  });
+
+  it("leaves defaults out, and ignores values it doesn't know", () => {
+    expect(toParams(emptyQuery, 0).toString()).toBe("");
+    expect(fromParams(new URLSearchParams("d=Easy,Bogus&status=x&sort=y&page=-4"))).toEqual({
+      query: { ...emptyQuery, difficulties: ["Easy"] },
+      page: 0,
+    });
   });
 });

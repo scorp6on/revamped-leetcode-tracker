@@ -85,3 +85,36 @@
     @apply bg-background text-foreground font-sans text-sm antialiased;
   }
 }
+
+/* LeetCode's statement HTML (sanitized). Long code and wide images stay inside the page at 375px. */
+@layer components {
+  .statement {
+    @apply flex flex-col gap-3 text-[15px] leading-relaxed;
+    overflow-wrap: anywhere;
+  }
+  .statement :where(ul, ol) {
+    @apply flex flex-col gap-1 pl-6;
+  }
+  .statement ul {
+    @apply list-disc;
+  }
+  .statement ol {
+    @apply list-decimal;
+  }
+  .statement :where(code) {
+    @apply rounded bg-subtle px-1 py-0.5 font-mono text-[13px];
+  }
+  .statement pre {
+    @apply overflow-x-auto rounded-lg border bg-subtle p-3 font-mono text-[13px] leading-normal whitespace-pre;
+    overflow-wrap: normal;
+  }
+  .statement pre code {
+    @apply bg-transparent p-0;
+  }
+  .statement img {
+    @apply h-auto max-w-full;
+  }
+  .statement :where(strong, b) {
+    @apply font-semibold;
+  }
+}

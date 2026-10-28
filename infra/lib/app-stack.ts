@@ -119,6 +119,23 @@ export class AppStack extends cdk.Stack {
     route("/api/logout", apigw.HttpMethod.POST, logout, true);
     route("/api/me", apigw.HttpMethod.GET, me);
 
+    // Problem view (M3). Each Lambda gets only the one DynamoDB action it needs, on PROBLEM# keys.
+    const problemKeys = (fn: lambda.IFunction, action: string) =>
+      fn.addToRolePolicy(
+        new iam.PolicyStatement({
+          actions: [action],
+          resources: [table.tableArn],
+          conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["PROBLEM#*"] } },
+        }),
+      );
+    // Waits on LeetCode for the statement, which can be slow.
+    const problem = fn("ProblemFn", "problem.ts", { timeout: cdk.Duration.seconds(10) });
+    problemKeys(problem, "dynamodb:Query");
+    const predict = fn("PredictFn", "predict.ts");
+    problemKeys(predict, "dynamodb:PutItem");
+    route("/api/problems/{slug}", apigw.HttpMethod.GET, problem);
+    route("/api/predictions", apigw.HttpMethod.POST, predict);
+
     const site = new s3.Bucket(this, "Site", {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,

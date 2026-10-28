@@ -4,6 +4,7 @@ import { api, setUnauthorizedHandler } from "./api";
 import { AppHeader } from "./components/AppHeader";
 import { Home } from "./Home";
 import { Login } from "./Login";
+import { ProblemPage } from "./problem/ProblemPage";
 import { useTheme } from "./theme";
 
 type Session = "checking" | "in" | "out";
@@ -38,6 +39,7 @@ export function App() {
       {session === "in" && (
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/problems/:slug" element={<ProblemPage />} />
           <Route
             path="*"
             element={<p className="mx-auto w-full max-w-[1120px] px-6 py-10 text-muted-foreground">Page not found.</p>}

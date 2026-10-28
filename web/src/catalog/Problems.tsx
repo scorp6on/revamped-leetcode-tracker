@@ -1,12 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router";
 import type { Catalog, Difficulty } from "../../../api/src/catalog/types";
 import { DifficultyBadge } from "../components/DifficultyBadge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { cn } from "../lib/utils";
-import { PAGE_SIZE, emptyQuery, filterCatalog, pageOf, type CatalogQuery, type SortKey } from "./filter";
+import {
+  DIFFICULTIES,
+  PAGE_SIZE,
+  filterCatalog,
+  fromParams,
+  pageOf,
+  toParams,
+  type CatalogQuery,
+  type SortKey,
+} from "./filter";
 
-const DIFFICULTIES: Difficulty[] = ["Easy", "Medium", "Hard"];
 const selectClass =
   "h-11 rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -27,8 +36,11 @@ const SearchIcon = () => (
 
 export function Problems() {
   const [catalog, setCatalog] = useState<Catalog | "loading" | "error">("loading");
-  const [query, setQuery] = useState<CatalogQuery>(emptyQuery);
-  const [page, setPage] = useState(0);
+  const [params, setParams] = useSearchParams();
+  const { query, page } = useMemo(() => fromParams(params), [params]);
+  // replace: typing a search shouldn't add a Back-button step per keystroke.
+  const setView = (q: CatalogQuery, p: number) => setParams(toParams(q, p), { replace: true });
+  const setPage = (p: number) => setView(query, p);
 
   useEffect(() => {
     fetch("/data/catalog.json")
@@ -51,10 +63,7 @@ export function Problems() {
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
 
   // Any change to the search or filters starts again at page 1.
-  const update = (patch: Partial<CatalogQuery>) => {
-    setQuery((q) => ({ ...q, ...patch }));
-    setPage(0);
-  };
+  const update = (patch: Partial<CatalogQuery>) => setView({ ...query, ...patch }, 0);
   const toggleDifficulty = (d: Difficulty) =>
     update({
       difficulties: query.difficulties.includes(d)
@@ -171,7 +180,9 @@ export function Problems() {
                     <td className="px-4 py-3 font-mono text-[13px] text-muted-foreground">{p.id}</td>
                     <td className="px-4 py-3 font-medium">
                       <span className="inline-flex items-center gap-2">
-                        {p.title}
+                        <Link to={`/problems/${p.slug}`} className="hover:underline">
+                          {p.title}
+                        </Link>
                         {p.paid && (
                           <span className="text-muted-foreground">
                             <LockIcon />
