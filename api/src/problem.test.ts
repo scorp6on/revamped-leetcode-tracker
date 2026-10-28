@@ -70,7 +70,7 @@ describe("GET /api/problems/{slug}", () => {
     expect(res.body.prediction).toBeNull();
   });
 
-  it("returns the problem with an unclaimed prediction under 24 hours old", async () => {
+  it("returns the problem with an unclaimed prediction under 6 hours old", async () => {
     const latest = predictionAt(NOW - PREDICTION_WINDOW_MS + 1000);
     const res = await setup({ latest })("two-sum");
     expect(res.statusCode).toBe(200);
@@ -78,7 +78,7 @@ describe("GET /api/problems/{slug}", () => {
     expect(res.body.prediction).toEqual(latest);
   });
 
-  it("leaves out a prediction that's claimed or older than 24 hours", async () => {
+  it("leaves out a prediction that's claimed or older than 6 hours", async () => {
     expect((await setup({ latest: predictionAt(NOW - 1000, true) })("two-sum")).body.prediction).toBeNull();
     expect((await setup({ latest: predictionAt(NOW - PREDICTION_WINDOW_MS) })("two-sum")).body.prediction).toBeNull();
   });

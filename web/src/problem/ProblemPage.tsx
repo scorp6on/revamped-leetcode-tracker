@@ -63,6 +63,7 @@ function ProblemView({ problem, prediction }: { problem: Problem; prediction: Pr
     [problem.content],
   );
   const leetCodeUrl = `https://leetcode.com/problems/${problem.slug}/`;
+  const [showTopics, setShowTopics] = useState(false);
 
   return (
     <>
@@ -72,11 +73,24 @@ function ProblemView({ problem, prediction }: { problem: Problem; prediction: Pr
         </h1>
         <div className="flex flex-wrap items-center gap-2">
           <DifficultyBadge difficulty={problem.difficulty} />
-          {problem.tags.map((t) => (
-            <span key={t.slug} className="rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">
-              {t.name}
-            </span>
-          ))}
+          {/* Topics give the pattern away, so they stay hidden until you ask (#46). */}
+          {problem.tags.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-11 text-muted-foreground"
+              aria-expanded={showTopics}
+              onClick={() => setShowTopics(!showTopics)}
+            >
+              {showTopics ? "Hide topics" : `Show topics (${problem.tags.length})`}
+            </Button>
+          )}
+          {showTopics &&
+            problem.tags.map((t) => (
+              <span key={t.slug} className="rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground">
+                {t.name}
+              </span>
+            ))}
         </div>
       </header>
 

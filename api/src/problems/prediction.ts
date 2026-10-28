@@ -2,8 +2,8 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import type { Prediction } from "./types";
 
-// After this long unclaimed, a prediction counts as abandoned and the page asks for a new one (#45).
-export const PREDICTION_WINDOW_MS = 24 * 60 * 60 * 1000;
+// After this long unclaimed, a prediction counts as abandoned and the page asks for a new one (#45, 6 h per #46).
+export const PREDICTION_WINDOW_MS = 6 * 60 * 60 * 1000;
 
 export const isActive = (p: Prediction, now: number) =>
   !p.claimed && now - Date.parse(p.createdAt) < PREDICTION_WINDOW_MS;
