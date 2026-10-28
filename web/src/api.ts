@@ -1,4 +1,5 @@
-// Thrown for any 401: the token is missing, expired or invalid, so the app shows the login page.
+// Thrown when the session is gone, so the app shows the login page. API Gateway answers 401 when
+// there's no cookie at all and 403 when the authorizer rejects the token (expired or invalid).
 export class Unauthorized extends Error {}
 
 let onUnauthorized = () => {};
@@ -12,7 +13,7 @@ export async function api(path: string, init: RequestInit = {}) {
     ...init,
     headers: { "content-type": "application/json", ...init.headers },
   });
-  if (res.status === 401 && path !== "/api/login") {
+  if ((res.status === 401 || res.status === 403) && path !== "/api/login") {
     onUnauthorized();
     throw new Unauthorized();
   }
