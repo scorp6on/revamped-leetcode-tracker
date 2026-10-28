@@ -17,8 +17,9 @@ export class AccountStack extends cdk.Stack {
       clientIdList: ["sts.amazonaws.com"],
     });
 
-    // A GitHub job's OIDC "sub" claim names its environment, e.g.
-    // repo:owner/name:environment:prod. Each role trusts only its own environment
+    // A GitHub job's OIDC "sub" claim names the repo by owner and repo IDs plus its environment,
+    // e.g. repo:owner@123/name@456:environment:prod. Pinning the IDs means a renamed or re-created
+    // repo can't inherit access. Each role trusts only its own environment
     // (dev also allows PR jobs, which only run `cdk diff`).
     const deployRole = (stage: "dev" | "prod", subjects: string[]) => {
       const role = new iam.Role(this, `Deploy-${stage}`, {

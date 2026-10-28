@@ -8,7 +8,8 @@ const env = { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_
 // Deployed once from your machine: GitHub OIDC trust, deploy roles, budget alert.
 new AccountStack(app, "LeetTracker-Account", {
   env,
-  repo: "scorp6on/revamped-leetcode-tracker",
+  // owner@ownerId/repo@repoId, exactly as GitHub's OIDC token names it
+  repo: "scorp6on@143651609/revamped-leetcode-tracker@1431498881",
   budgetEmail: app.node.tryGetContext("budgetEmail"),
 });
 
