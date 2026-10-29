@@ -19,7 +19,9 @@ const valid = {
   confidence: 4,
   minutes: 12,
   failureMode: null,
-  notes: "  hash map  ",
+  approach: "  **hash map** of seen values  ",
+  learned: "complement lookup",
+  reflection: "",
   localDate: "2026-10-28",
 };
 
@@ -56,7 +58,10 @@ describe("POST /api/attempts", () => {
     expect(res.statusCode).toBe(201);
     expect(recorded).toHaveLength(1);
     const { attempt, schedule, claim } = recorded[0];
-    expect(attempt).toMatchObject({ outcome: "solved", quality: 4, notes: "hash map", prediction: null });
+    expect(attempt).toMatchObject({
+      outcome: "solved", quality: 4, prediction: null,
+      approach: "**hash map** of seen values", learned: "complement lookup", reflection: "",
+    });
     expect(attempt.createdAt).toBe("2026-10-28T20:00:00.000Z");
     expect(schedule).toMatchObject({ due: "2026-10-29", intervalDays: 1, repetitions: 1, attempts: 1, solved: true });
     expect(claim).toBeUndefined();
@@ -124,7 +129,9 @@ describe("POST /api/attempts", () => {
       { minutes: 601 },
       { failureMode: "bad-luck" },
       { localDate: "2026-02-30" },
-      { notes: "x".repeat(5001) },
+      { approach: "x".repeat(5001) },
+      { learned: "x".repeat(5001) },
+      { reflection: 42 },
       { tags: ["Not A Slug"] },
       { difficulty: "Extreme" },
       { problemId: "1#SK" },

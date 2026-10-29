@@ -15,6 +15,7 @@ const RECENT_ATTEMPTS = 50;
 
 export interface ReviewStore {
   schedule(problemId: string): Promise<Schedule | undefined>;
+  attempts(problemId: string): Promise<Attempt[]>; // newest first
   // All three writes land together or not at all.
   record(change: { attempt: Attempt; schedule: Schedule; claim?: Prediction }): Promise<void>;
   overview(): Promise<ScheduleResponse>;
@@ -45,6 +46,16 @@ export const dynamoReviewStore = (tableName: string): ReviewStore => {
         new GetCommand({ TableName: tableName, Key: { PK: `PROBLEM#${problemId}`, SK: "SCHEDULE" } }),
       );
       return Item && strip<Schedule>(Item);
+    },
+
+    async attempts(problemId) {
+      const items = await queryAll({
+        TableName: tableName,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
+        ExpressionAttributeValues: { ":pk": `PROBLEM#${problemId}`, ":sk": "ATTEMPT#" },
+        ScanIndexForward: false, // sort keys hold the time, so this is newest first
+      });
+      return items.map((a) => strip<Attempt>(a));
     },
 
     async record({ attempt, schedule, claim }) {

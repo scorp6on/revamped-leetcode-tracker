@@ -18,7 +18,15 @@ export const FAILURE_MODES = {
 export type FailureMode = keyof typeof FAILURE_MODES;
 
 export const MAX_MINUTES = 600;
-export const MAX_NOTES_LENGTH = 5000;
+export const MAX_NOTES_LENGTH = 5000; // per note section (#53)
+
+// The three optional note sections (#51), in Markdown. Images are /img/<uuid>.jpg links (#52).
+export const NOTE_SECTIONS = {
+  approach: "Approach",
+  learned: "What I learned",
+  reflection: "Reflection",
+} as const;
+export type NoteSection = keyof typeof NOTE_SECTIONS;
 
 // What you fill in when recording (#19), plus the problem facts the page already has.
 export interface AttemptInput {
@@ -31,7 +39,9 @@ export interface AttemptInput {
   confidence: number; // 1–5
   minutes: number;
   failureMode: FailureMode | null; // required for struggled / failed (#50)
-  notes: string;
+  approach: string;
+  learned: string;
+  reflection: string;
   localDate: string; // your YYYY-MM-DD when you recorded it (#50)
 }
 
@@ -40,6 +50,7 @@ export interface Attempt extends AttemptInput {
   createdAt: string; // ISO time
   quality: number; // the 0–5 SM-2 grade it produced
   prediction: string | null; // the claimed prediction's text, if any
+  notes?: string; // the single note box of attempts recorded before M4.5 (#53)
 }
 
 export interface ReviewState {

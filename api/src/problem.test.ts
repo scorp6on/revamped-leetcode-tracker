@@ -2,6 +2,7 @@ import type { APIGatewayProxyEventV2 } from "aws-lambda";
 import { describe, expect, it } from "vitest";
 import { makeProblemHandler } from "./problem";
 import type { Prediction, Problem } from "./problems/types";
+import type { Attempt } from "./review/types";
 import { PREDICTION_WINDOW_MS } from "./problems/prediction";
 
 const NOW = Date.parse("2026-10-28T12:00:00Z");
@@ -27,6 +28,7 @@ const predictionAt = (ms: number, claimed = false): Prediction => ({
 const setup = ({
   problem = twoSum as Problem | null | Error,
   latest = undefined as Prediction | undefined,
+  attempts = [] as Attempt[],
 } = {}) => {
   const handler = makeProblemHandler({
     fetchProblem: async () => {
@@ -34,6 +36,7 @@ const setup = ({
       return problem;
     },
     predictions: { latest: async () => latest },
+    reviews: { attempts: async () => attempts },
     now: () => NOW,
   });
   return async (slug: string) => {
@@ -76,6 +79,12 @@ describe("GET /api/problems/{slug}", () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.problem.content).toBe(twoSum.content);
     expect(res.body.prediction).toEqual(latest);
+  });
+
+  it("includes your attempts on the problem, as the store returns them (newest first)", async () => {
+    const attempts = [{ createdAt: "2026-10-28T10:00:00.000Z" }, { createdAt: "2026-10-27T10:00:00.000Z" }] as Attempt[];
+    expect((await setup({ attempts })("two-sum")).body.attempts).toEqual(attempts);
+    expect((await setup({ attempts, problem: { ...twoSum, paid: true } })("two-sum")).body.attempts).toEqual([]);
   });
 
   it("leaves out a prediction that's claimed or older than 6 hours", async () => {

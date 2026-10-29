@@ -156,13 +156,21 @@ export class AppStack extends cdk.Stack {
     route("/api/predictions", apigw.HttpMethod.POST, apiFn);
     route("/api/attempts", apigw.HttpMethod.POST, apiFn);
     route("/api/schedule", apigw.HttpMethod.GET, apiFn);
+    route("/api/uploads", apigw.HttpMethod.POST, apiFn);
 
     const site = new s3.Bucket(this, "Site", {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
       removalPolicy,
       autoDeleteObjects: props.stage === "dev",
+      // Note images go from the browser straight to S3 with a presigned POST (#52). Any origin may
+      // try, but S3 refuses anything without a valid one-time signature from the API Lambda.
+      cors: [{ allowedMethods: [s3.HttpMethods.POST], allowedOrigins: ["*"], allowedHeaders: ["*"] }],
     });
+
+    // The API Lambda signs those uploads, so it needs PutObject, but only on img/*.
+    apiFn.addEnvironment("SITE_BUCKET", site.bucketName);
+    site.grantPut(apiFn, "img/*");
 
     // One domain for the app and the API: /api/* goes to API Gateway, everything else to S3.
     const apiDomain = cdk.Fn.select(2, cdk.Fn.split("/", api.apiEndpoint));
@@ -199,8 +207,9 @@ export class AppStack extends cdk.Stack {
       sources: [s3deploy.Source.asset(path.join(repoRoot, "web/dist"))],
       destinationBucket: site,
       distribution,
-      // data/ is written by the Catalog Lambda; without this, every web deploy would delete it.
-      exclude: ["data/*"],
+      // data/ is written by the Catalog Lambda and img/ holds note images (#53); without this,
+      // every web deploy would delete them.
+      exclude: ["data/*", "img/*"],
     });
 
     // Catalog (decision #29): LeetCode's public problem list → s3://site/data/catalog.json.

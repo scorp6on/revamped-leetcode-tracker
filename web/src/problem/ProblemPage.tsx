@@ -6,9 +6,11 @@ import { api } from "../api";
 import { DifficultyBadge } from "../components/DifficultyBadge";
 import { Button, buttonVariants } from "../components/ui/button";
 import { Label } from "../components/ui/label";
+import type { Attempt } from "../../../api/src/review/types";
+import { PastAttempts } from "./PastAttempts";
 import { RecordAttempt } from "./RecordAttempt";
 
-type Load = "loading" | "not-found" | "error" | { problem: Problem; prediction: Prediction | null };
+type Load = "loading" | "not-found" | "error" | { problem: Problem; prediction: Prediction | null; attempts: Attempt[] };
 // A prediction is locked as soon as you open LeetCode; the save runs alongside the new tab.
 type Locked = { text: string; status: "saving" | "saved" | "failed" };
 
@@ -57,7 +59,15 @@ function BackLink() {
   );
 }
 
-function ProblemView({ problem, prediction }: { problem: Problem; prediction: Prediction | null }) {
+function ProblemView({
+  problem,
+  prediction,
+  attempts: loaded,
+}: {
+  problem: Problem;
+  prediction: Prediction | null;
+  attempts: Attempt[];
+}) {
   const statement = useMemo(
     // LeetCode's HTML goes into our page, so anything executable is stripped first (#45).
     () => (problem.content ? DOMPurify.sanitize(problem.content) : null),
@@ -67,6 +77,7 @@ function ProblemView({ problem, prediction }: { problem: Problem; prediction: Pr
   const [showTopics, setShowTopics] = useState(false);
   // A recorded attempt claims the prediction, so the panel starts fresh for the next attempt.
   const [panel, setPanel] = useState({ key: 0, saved: prediction });
+  const [attempts, setAttempts] = useState(loaded);
 
   return (
     <>
@@ -108,7 +119,14 @@ function ProblemView({ problem, prediction }: { problem: Problem; prediction: Pr
         <>
           {statement && <div className="statement" dangerouslySetInnerHTML={{ __html: statement }} />}
           <PredictionPanel key={panel.key} problem={problem} saved={panel.saved} leetCodeUrl={leetCodeUrl} />
-          <RecordAttempt problem={problem} onRecorded={() => setPanel(({ key }) => ({ key: key + 1, saved: null }))} />
+          <RecordAttempt
+            problem={problem}
+            onRecorded={(attempt) => {
+              setPanel(({ key }) => ({ key: key + 1, saved: null }));
+              setAttempts((list) => [attempt, ...list]);
+            }}
+          />
+          <PastAttempts attempts={attempts} />
         </>
       )}
     </>

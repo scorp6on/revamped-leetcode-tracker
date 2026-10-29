@@ -117,3 +117,48 @@
     @apply font-semibold;
   }
 }
+
+/* Your notes rendered from Markdown (#51). Images keep their shape, capped at 480 px tall, and
+   open full size on tap (#52). */
+@layer components {
+  .note {
+    @apply flex flex-col gap-2 leading-relaxed;
+    overflow-wrap: anywhere;
+  }
+  .note :where(p, ul, ol, pre) {
+    @apply m-0;
+  }
+  .note :where(ul, ol) {
+    @apply flex flex-col gap-1 pl-6;
+  }
+  .note ul {
+    @apply list-disc;
+  }
+  .note ol {
+    @apply list-decimal;
+  }
+  .note :where(code) {
+    @apply rounded bg-subtle px-1 py-0.5 font-mono text-[13px];
+  }
+  .note pre {
+    @apply rounded-lg border bg-subtle p-3 font-mono text-[13px] leading-normal whitespace-pre-wrap;
+  }
+  .note pre code {
+    @apply bg-transparent p-0;
+  }
+  .note :where(strong) {
+    @apply font-semibold;
+  }
+  .note a {
+    @apply underline underline-offset-2;
+  }
+  .note a.note-img {
+    @apply block w-fit max-w-full no-underline;
+  }
+  .note img {
+    @apply block h-auto max-h-[480px] w-auto max-w-full rounded-lg border;
+  }
+  .note-uploading {
+    @apply block text-[13px] text-muted-foreground;
+  }
+}

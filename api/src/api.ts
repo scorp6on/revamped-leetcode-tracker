@@ -6,6 +6,7 @@ import { makeProblemHandler } from "./problem";
 import { fetchProblem } from "./problems/leetcode";
 import { dynamoPredictionStore } from "./problems/prediction";
 import { dynamoReviewStore } from "./review/store";
+import { uploadHandler } from "./uploads";
 
 type Route = (event: APIGatewayProxyEventV2) => Promise<APIGatewayProxyResultV2>;
 
@@ -25,8 +26,9 @@ const reviews = dynamoReviewStore(table);
 export const handler = makeApiHandler({
   // Only reachable through the authorizer, so getting here means the token is valid.
   "GET /api/me": async () => json(200, { loggedIn: true }),
-  "GET /api/problems/{slug}": makeProblemHandler({ fetchProblem, predictions, now: Date.now }),
+  "GET /api/problems/{slug}": makeProblemHandler({ fetchProblem, predictions, reviews, now: Date.now }),
   "POST /api/predictions": makePredictHandler({ predictions, now: Date.now }),
   "POST /api/attempts": makeAttemptHandler({ reviews, predictions, now: Date.now }),
   "GET /api/schedule": async () => json(200, await reviews.overview()),
+  "POST /api/uploads": uploadHandler,
 });

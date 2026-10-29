@@ -10,7 +10,9 @@ import {
   FAILURE_MODES,
   MAX_MINUTES,
   MAX_NOTES_LENGTH,
+  NOTE_SECTIONS,
   OUTCOMES,
+  type NoteSection,
   type Attempt,
   type AttemptInput,
   type FailureMode,
@@ -29,7 +31,7 @@ const isInt = (n: unknown, min: number, max: number): n is number =>
 
 // Returns the cleaned input, or the reason it was refused.
 export function parseAttempt(body: Record<string, unknown>): AttemptInput | string {
-  const { problemId, slug, title, difficulty, tags, outcome, confidence, minutes, failureMode, notes, localDate } = body;
+  const { problemId, slug, title, difficulty, tags, outcome, confidence, minutes, failureMode, localDate } = body;
   if (typeof problemId !== "string" || !/^\d+$/.test(problemId)) return "problemId required";
   if (typeof slug !== "string" || !SLUG.test(slug)) return "slug required";
   if (typeof title !== "string" || !title || title.length > 200) return "title required";
@@ -45,8 +47,11 @@ export function parseAttempt(body: Record<string, unknown>): AttemptInput | stri
   }
   // The Today ranking runs on failure modes, so a rough attempt must say what went wrong (#50).
   if (outcome !== "solved" && failureMode == null) return "failure mode required when you struggled or failed";
-  if (notes != null && (typeof notes !== "string" || notes.length > MAX_NOTES_LENGTH)) {
-    return `notes must be at most ${MAX_NOTES_LENGTH} characters`;
+  for (const section of Object.keys(NOTE_SECTIONS) as NoteSection[]) {
+    const text = body[section];
+    if (text != null && (typeof text !== "string" || text.length > MAX_NOTES_LENGTH)) {
+      return `${NOTE_SECTIONS[section]} must be at most ${MAX_NOTES_LENGTH} characters`;
+    }
   }
   if (!isLocalDate(localDate)) return "localDate must be YYYY-MM-DD";
 
@@ -60,7 +65,9 @@ export function parseAttempt(body: Record<string, unknown>): AttemptInput | stri
     confidence,
     minutes,
     failureMode: (failureMode ?? null) as FailureMode | null,
-    notes: ((notes as string | undefined) ?? "").trim(),
+    approach: ((body.approach as string | undefined) ?? "").trim(),
+    learned: ((body.learned as string | undefined) ?? "").trim(),
+    reflection: ((body.reflection as string | undefined) ?? "").trim(),
     localDate,
   };
 }

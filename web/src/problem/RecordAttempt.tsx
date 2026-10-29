@@ -1,11 +1,12 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useState, type FormEvent, type ReactNode } from "react";
 import type { Problem } from "../../../api/src/problems/types";
 import { daysBetween } from "../../../api/src/review/dates";
 import {
   FAILURE_MODES,
   MAX_MINUTES,
-  MAX_NOTES_LENGTH,
+  type Attempt,
   type FailureMode,
+  type NoteSection,
   type Outcome,
   type Schedule,
 } from "../../../api/src/review/types";
@@ -13,6 +14,7 @@ import { api } from "../api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { NoteEditor } from "../notes/NoteEditor";
 import { localToday } from "../queue/rank";
 import { shortDate } from "../queue/useSchedule";
 
@@ -21,12 +23,22 @@ const fieldClass =
   "rounded-lg border bg-background px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring sm:text-sm";
 
 // Recording by hand (#19); synced submissions get the same form in M7.
-export function RecordAttempt({ problem, onRecorded }: { problem: Problem; onRecorded: () => void }) {
+export function RecordAttempt({ problem, onRecorded }: { problem: Problem; onRecorded: (attempt: Attempt) => void }) {
   const [outcome, setOutcome] = useState<Outcome>();
   const [confidence, setConfidence] = useState<number>();
   const [minutes, setMinutes] = useState("");
   const [failureMode, setFailureMode] = useState<FailureMode | "">("");
-  const [notes, setNotes] = useState("");
+  // The three note sections (#51).
+  const [approach, setApproach] = useState("");
+  const [learned, setLearned] = useState("");
+  const [reflection, setReflection] = useState("");
+  const [uploads, setUploads] = useState<Record<NoteSection, number>>({ approach: 0, learned: 0, reflection: 0 });
+  const tracker = (section: NoteSection) => (n: number) => setUploads((u) => (u[section] === n ? u : { ...u, [section]: n }));
+  // Stable per section, so each editor reports its uploads without re-rendering in a loop.
+  const onApproachUploads = useCallback(tracker("approach"), []);
+  const onLearnedUploads = useCallback(tracker("learned"), []);
+  const onReflectionUploads = useCallback(tracker("reflection"), []);
+  const uploading = uploads.approach + uploads.learned + uploads.reflection;
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: true; due: string } | { ok: false; error: string }>();
 
@@ -37,7 +49,7 @@ export function RecordAttempt({ problem, onRecorded }: { problem: Problem; onRec
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!ready) return;
+    if (!ready || uploading > 0) return;
     setBusy(true);
     setResult(undefined);
     try {
@@ -53,7 +65,9 @@ export function RecordAttempt({ problem, onRecorded }: { problem: Problem; onRec
           confidence,
           minutes: mins,
           failureMode: failureMode || null,
-          notes,
+          approach,
+          learned,
+          reflection,
           localDate: localToday(),
         }),
       });
@@ -64,8 +78,10 @@ export function RecordAttempt({ problem, onRecorded }: { problem: Problem; onRec
       setConfidence(undefined);
       setMinutes("");
       setFailureMode("");
-      setNotes("");
-      onRecorded();
+      setApproach("");
+      setLearned("");
+      setReflection("");
+      onRecorded(body.attempt as Attempt);
     } catch {
       setResult({ ok: false, error: "Couldn't reach the server. Try again." });
     } finally {
@@ -132,24 +148,14 @@ export function RecordAttempt({ problem, onRecorded }: { problem: Problem; onRec
         </select>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="notes">
-          Notes <span className="font-normal text-muted-foreground">(optional)</span>
-        </Label>
-        <textarea
-          id="notes"
-          rows={4}
-          value={notes}
-          maxLength={MAX_NOTES_LENGTH}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="What you'd tell yourself next time"
-          className={`${fieldClass} py-2.5`}
-        />
-      </div>
+      <NoteEditor id="approach" label="Approach" hint="what you did" value={approach} setValue={setApproach} onUploadingChange={onApproachUploads} />
+      <NoteEditor id="learned" label="What I learned" hint="about the problem or pattern" value={learned} setValue={setLearned} onUploadingChange={onLearnedUploads} />
+      <NoteEditor id="reflection" label="Reflection" hint="about you and your process" value={reflection} setValue={setReflection} onUploadingChange={onReflectionUploads} />
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" disabled={!ready || busy}>
-          {busy ? "Saving…" : "Save attempt"}
+        {/* Saving mid-upload would store a note pointing at an image that isn't there yet (#53). */}
+        <Button type="submit" disabled={!ready || busy || uploading > 0}>
+          {busy ? "Saving…" : uploading > 0 ? "Save attempt (waiting for upload)" : "Save attempt"}
         </Button>
         {result?.ok === true && (
           <p role="status">
