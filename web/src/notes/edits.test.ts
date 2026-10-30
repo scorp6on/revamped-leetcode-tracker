@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { bulletList, code, imageMarkdown, insertBlock, replaceToken, uploadingToken, wrap, type Edit } from "./edits";
+import {
+  backspace,
+  bulletList,
+  closeBrace,
+  code,
+  imageMarkdown,
+  inCodeBlock,
+  indent,
+  insertBlock,
+  newline,
+  outdent,
+  replaceToken,
+  uploadingToken,
+  wrap,
+  type Edit,
+} from "./edits";
 
 // Write the selection inline as [brackets] for readable tests: "a [b] c" selects "b".
 const at = (s: string): Edit => {
@@ -42,5 +57,46 @@ describe("upload placeholders", () => {
 
   it("removes a failed upload's placeholder and its line", () => {
     expect(replaceToken(`a\n${uploadingToken("1")}\nb`, uploadingToken("1"), "")).toBe("a\nb");
+  });
+});
+
+describe("code-block typing (#54)", () => {
+  const fence = (body: string) => "notes\n```\n" + body + "\n```\nafter";
+
+  it("knows when the cursor is inside a fence", () => {
+    const t = fence("x = 1");
+    expect(inCodeBlock(t, t.indexOf("x = 1") + 2)).toBe(true);
+    expect(inCodeBlock(t, 2)).toBe(false); // before the fence
+    expect(inCodeBlock(t, t.indexOf("after") + 1)).toBe(false); // after it closes
+    expect(inCodeBlock("```py\n", 3)).toBe(false); // on the opening line itself
+  });
+
+  it("Enter keeps the indent, and adds a level after : or {", () => {
+    expect(show(newline(at("    x = 1[]")))).toBe("    x = 1\n    []");
+    expect(show(newline(at("if l < r:[]")))).toBe("if l < r:\n    []");
+    expect(show(newline(at("    for c in s:[]")))).toBe("    for c in s:\n        []");
+    expect(show(newline(at("while (l < r) {[]")))).toBe("while (l < r) {\n    []");
+  });
+
+  it("Enter between { and } puts } on its own line", () => {
+    expect(show(newline(at("  if (x) {[]}")))).toBe("  if (x) {\n      []\n  }");
+  });
+
+  it("Tab and Shift+Tab indent the cursor or every selected line", () => {
+    expect(show(indent(at("x[]")))).toBe("x    []");
+    expect(show(indent(at("[a\nb]")))).toBe("[    a\n    b]");
+    expect(show(outdent(at("        x[]")))).toBe("    x[]");
+    expect(show(outdent(at("[    a\n  b]")))).toBe("[a\nb]");
+  });
+
+  it("Backspace in an indent removes a whole step", () => {
+    expect(show(backspace(at("        []"))!)).toBe("    []");
+    expect(show(backspace(at("      []"))!)).toBe("    []"); // back to the previous multiple of 4
+    expect(backspace(at("    x[]"))).toBeNull(); // normal backspace after text
+  });
+
+  it("} on a blank indented line steps out one level", () => {
+    expect(show(closeBrace(at("if (x) {\n    y();\n    []"))!)).toBe("if (x) {\n    y();\n}[]");
+    expect(closeBrace(at("    y();[]"))).toBeNull();
   });
 });

@@ -1,7 +1,31 @@
-import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type Dispatch, type SetStateAction } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type Dispatch,
+  type DragEvent,
+  type KeyboardEvent,
+  type SetStateAction,
+} from "react";
 import { MAX_NOTES_LENGTH } from "../../../api/src/review/types";
 import { cn } from "../lib/utils";
-import { bulletList, code, imageMarkdown, insertBlock, replaceToken, uploadingToken, wrap, type Edit } from "./edits";
+import {
+  backspace,
+  bulletList,
+  closeBrace,
+  code,
+  imageMarkdown,
+  inCodeBlock,
+  indent,
+  insertBlock,
+  newline,
+  outdent,
+  replaceToken,
+  uploadingToken,
+  wrap,
+  type Edit,
+} from "./edits";
 import { shrinkToJpeg, uploadImage } from "./image";
 import { Markdown } from "./Markdown";
 
@@ -91,6 +115,54 @@ export function NoteEditor({
     });
   };
 
+  // Inside a ``` block the box acts like a small code editor (#54); elsewhere keys behave normally.
+  const escaped = useRef(false); // Esc, then Tab, leaves the box instead of indenting
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget;
+    const edit = { text: value, start: el.selectionStart, end: el.selectionEnd };
+    if (!inCodeBlock(value, edit.start)) return;
+    if (e.key === "Escape") {
+      escaped.current = true;
+      return;
+    }
+    if (e.key === "Tab") {
+      if (escaped.current) return void (escaped.current = false);
+      e.preventDefault();
+      apply(e.shiftKey ? outdent : indent);
+      return;
+    }
+    escaped.current = false;
+    const result =
+      e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing
+        ? newline(edit)
+        : e.key === "Backspace"
+          ? backspace(edit)
+          : e.key === "}"
+            ? closeBrace(edit)
+            : null;
+    if (result) {
+      e.preventDefault();
+      apply(() => result);
+    }
+  };
+
+  // Some phone keyboards don't report Enter as a key press, only as "insert a new line".
+  const onNewlineInput = useRef<(e: InputEvent) => void>(() => {});
+  onNewlineInput.current = (e) => {
+    const el = box.current;
+    if (!el || (e.inputType !== "insertLineBreak" && e.inputType !== "insertParagraph")) return;
+    if (!inCodeBlock(value, el.selectionStart)) return;
+    e.preventDefault();
+    apply(newline);
+  };
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const listener = (e: Event) => onNewlineInput.current(e as InputEvent);
+    el.addEventListener("beforeinput", listener);
+    return () => el.removeEventListener("beforeinput", listener);
+  }, [preview, dragging]); // the box is only mounted in Write mode
+
   const onPaste = (e: ClipboardEvent) => {
     const files = imagesIn(e.clipboardData.files);
     if (!files.length) return; // plain text pastes as usual
@@ -170,6 +242,7 @@ export function NoteEditor({
             value={value}
             maxLength={MAX_NOTES_LENGTH}
             onChange={(e) => setValue(e.target.value)}
+            onKeyDown={onKeyDown}
             onPaste={onPaste}
             className="block w-full resize-y bg-background px-4 py-3.5 font-mono text-base leading-relaxed outline-none sm:text-[13px]"
           />
