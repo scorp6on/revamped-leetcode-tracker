@@ -1,3 +1,4 @@
+import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda";
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
 import { makeAttemptHandler } from "./attempt";
 import { json } from "./http";
@@ -6,6 +7,9 @@ import { makeProblemHandler } from "./problem";
 import { fetchProblem } from "./problems/leetcode";
 import { dynamoPredictionStore } from "./problems/prediction";
 import { dynamoReviewStore } from "./review/store";
+import { makeSyncRoutes } from "./sync/routes";
+import { dynamoSyncStore } from "./sync/store";
+import { newToken } from "./sync/token";
 import { uploadHandler } from "./uploads";
 
 type Route = (event: APIGatewayProxyEventV2) => Promise<APIGatewayProxyResultV2>;
@@ -22,6 +26,16 @@ export const makeApiHandler =
 const table = process.env.TABLE_NAME ?? "";
 const predictions = dynamoPredictionStore(table);
 const reviews = dynamoReviewStore(table);
+const lambda = new LambdaClient({});
+const sync = makeSyncRoutes({
+  store: dynamoSyncStore(table),
+  // "Event" = start it and return at once; the page polls for the result.
+  runBackup: async () => {
+    await lambda.send(new InvokeCommand({ FunctionName: process.env.BACKUP_FN, InvocationType: "Event" }));
+  },
+  newToken,
+  now: Date.now,
+});
 
 export const handler = makeApiHandler({
   // Only reachable through the authorizer, so getting here means the token is valid.
@@ -31,4 +45,7 @@ export const handler = makeApiHandler({
   "POST /api/attempts": makeAttemptHandler({ reviews, predictions, now: Date.now }),
   "GET /api/schedule": async () => json(200, await reviews.overview()),
   "POST /api/uploads": uploadHandler,
+  "POST /api/extension/pair": sync.pair,
+  "GET /api/sync": sync.status,
+  "POST /api/sync": sync.syncNow,
 });

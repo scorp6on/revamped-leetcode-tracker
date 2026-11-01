@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "lc/tracker sync",
+  "version": "0.1.0",
+  "description": "Sends your LeetCode submissions to your lc/tracker, from your own browser.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnQ/PDIhGHhi4mcsfthNUAnd42/+nPyvh4EuNIkn44VkmMqYyifU8W+6E1fcFa2UM5GcSHOnQ7ilY8C8rQq3sOGjxMdXLVgehIMuNy5rPUlPCpu6Ryi+p0suz/f7xtr/LyZ/wAJ1M9jBfGPyiEssbykb+6UDJ2QjFKEcuKBYWv1I9eRNJm7P6s8Azau+tJct1zn+VjLWKu4fQaTc+p+Zwni9b3Fmv6P26wSB4rCOGXs30mDKSesAfVbLByl6dw8sv9goUDXiMtBVz/ocaHNUCvvpEI77PNEDH27uc6a4QiIt88As72etEAZKbCQsjTFw2gNpNGPh8lysxhYo8HHleFQIDAQAB",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "options_page": "options.html",
+  "action": {
+    "default_title": "lc/tracker sync"
+  },
+  "permissions": [
+    "alarms",
+    "storage",
+    "webRequest"
+  ],
+  "host_permissions": [
+    "https://leetcode.com/*",
+    "https://dcl5cus2cnbj3.cloudfront.net/*",
+    "https://d22dgdygw10q10.cloudfront.net/*"
+  ],
+  "externally_connectable": {
+    "matches": [
+      "https://dcl5cus2cnbj3.cloudfront.net/*",
+      "https://d22dgdygw10q10.cloudfront.net/*"
+    ]
+  }
+}

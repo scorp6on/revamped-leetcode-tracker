@@ -4,7 +4,8 @@
   "workspaces": [
     "api",
     "web",
-    "infra"
+    "infra",
+    "extension"
   ],
   "scripts": {
     "lint": "eslint .",

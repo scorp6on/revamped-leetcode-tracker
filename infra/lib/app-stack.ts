@@ -129,7 +129,8 @@ export class AppStack extends cdk.Stack {
     // One API Lambda for every app route (#26, #49), so it stays warm across pages.
     // Waits on LeetCode for problem statements, which can be slow.
     const apiFn = fn("ApiFn", "api.ts", { timeout: cdk.Duration.seconds(10) });
-    // Practice data only: PROBLEM# items, and the DUE / ATTEMPTS drawers of GSI1. Never AUTH or HEALTH.
+    // Practice data only: PROBLEM# items, the SYNC record and SUB# submissions, and the DUE /
+    // ATTEMPTS / PENDING drawers of GSI1. Never AUTH or HEALTH.
     // A transaction is checked as its parts (Put, Update, ConditionCheck) on each item.
     apiFn.addToRolePolicy(
       new iam.PolicyStatement({
@@ -141,16 +142,47 @@ export class AppStack extends cdk.Stack {
           "dynamodb:ConditionCheckItem",
         ],
         resources: [table.tableArn],
-        conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["PROBLEM#*"] } },
+        conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["PROBLEM#*", "SYNC", "SUB#*"] } },
       }),
     );
     apiFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["dynamodb:Query"],
         resources: [`${table.tableArn}/index/GSI1`],
-        conditions: { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["DUE", "ATTEMPTS"] } },
+        conditions: { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["DUE", "ATTEMPTS", "PENDING"] } },
       }),
     );
+
+    // Sync (#55, #56). Both sync Lambdas may only touch the SYNC record and SUB# submissions.
+    const syncKeys = (f: lambda.IFunction) =>
+      f.addToRolePolicy(
+        new iam.PolicyStatement({
+          actions: ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"],
+          resources: [table.tableArn],
+          conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["SYNC", "SUB#*"] } },
+        }),
+      );
+    // Receives the extension's reports; checks the extension token itself.
+    const ingestFn = fn("IngestFn", "ingest.ts");
+    syncKeys(ingestFn);
+    // The backup poll of LeetCode's public recent-accepted list.
+    const backupFn = fn("BackupFn", "backup.ts", { timeout: cdk.Duration.seconds(30) });
+    syncKeys(backupFn);
+    // Sync now starts the backup poll.
+    backupFn.grantInvoke(apiFn);
+    apiFn.addEnvironment("BACKUP_FN", backupFn.functionName);
+    // Scheduled sync is prod only (#36).
+    if (props.stage === "prod") {
+      new events.Rule(this, "BackupPoll", {
+        schedule: events.Schedule.rate(cdk.Duration.minutes(15)),
+        targets: [new targets.LambdaFunction(backupFn)],
+      });
+    }
+    // Public: the extension has no login cookie, so the Ingest Lambda checks its token.
+    route("/api/ext/sync", apigw.HttpMethod.POST, ingestFn, true);
+    route("/api/extension/pair", apigw.HttpMethod.POST, apiFn);
+    route("/api/sync", apigw.HttpMethod.GET, apiFn);
+    route("/api/sync", apigw.HttpMethod.POST, apiFn);
     route("/api/me", apigw.HttpMethod.GET, apiFn);
     route("/api/problems/{slug}", apigw.HttpMethod.GET, apiFn);
     route("/api/predictions", apigw.HttpMethod.POST, apiFn);

@@ -1,0 +1,13 @@
+{
+  "name": "extension",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.7"
+  }
+}
