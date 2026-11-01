@@ -18,11 +18,13 @@ import {
   type FailureMode,
   type Schedule,
 } from "./review/types";
+import type { ReviewMessage } from "./ai/types";
 import type { Submission } from "./sync/types";
 
 export interface AttemptDeps {
   reviews: Pick<ReviewStore, "schedule" | "record" | "pendingFor">;
   predictions: Pick<PredictionStore, "latest">;
+  queueReview: (m: ReviewMessage) => Promise<void>;
   now: () => number;
 }
 
@@ -83,7 +85,7 @@ const lastCode = (subs: Submission[]) => {
 };
 
 export const makeAttemptHandler =
-  ({ reviews, predictions, now }: AttemptDeps) =>
+  ({ reviews, predictions, queueReview, now }: AttemptDeps) =>
   async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
     const input = parseAttempt(readBody(event));
     if (typeof input === "string") return json(400, { error: input });
@@ -114,6 +116,7 @@ export const makeAttemptHandler =
       createdAt,
       quality,
       prediction: claim?.text ?? null,
+      reviewQueuedAt: new Date(t).toISOString(),
       ...(waiting.length ? { submissionIds: waiting.map((s) => s.id), code: lastCode(waiting) } : {}),
     };
     const failureModes = { ...current?.failureModes };
@@ -140,5 +143,7 @@ export const makeAttemptHandler =
       }
       throw err;
     }
+    // The grade already counts. If this fails, the attempt offers Request review (#58).
+    await queueReview({ problemId: input.problemId, createdAt }).catch((err) => console.error("couldn't queue the review", err));
     return json(201, { attempt, schedule });
   };

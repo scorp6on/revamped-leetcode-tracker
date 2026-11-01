@@ -7,6 +7,7 @@ import {
   type QueryCommandInput,
 } from "@aws-sdk/lib-dynamodb";
 import type { Prediction } from "../problems/types";
+import type { AiReview } from "../ai/types";
 import type { Submission } from "../sync/types";
 import type { Attempt, RecentFailure, Schedule, ScheduleResponse } from "./types";
 
@@ -17,6 +18,7 @@ const RECENT_ATTEMPTS = 50;
 export interface ReviewStore {
   schedule(problemId: string): Promise<Schedule | undefined>;
   attempts(problemId: string): Promise<Attempt[]>; // newest first
+  aiReviews(problemId: string): Promise<AiReview[]>;
   // Waiting to be graded, oldest first (#57).
   pending(): Promise<Submission[]>;
   pendingFor(slug: string): Promise<Submission[]>;
@@ -60,6 +62,15 @@ export const dynamoReviewStore = (tableName: string): ReviewStore => {
         ScanIndexForward: false, // sort keys hold the time, so this is newest first
       });
       return items.map((a) => strip<Attempt>(a));
+    },
+
+    async aiReviews(problemId) {
+      const items = await queryAll({
+        TableName: tableName,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
+        ExpressionAttributeValues: { ":pk": `PROBLEM#${problemId}`, ":sk": "AIREVIEW#" },
+      });
+      return items.map((r) => strip<AiReview>(r));
     },
 
     async pending() {

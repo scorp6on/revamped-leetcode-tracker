@@ -1,5 +1,9 @@
 import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda";
+import { SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
+import { makeAiRoutes } from "./ai/routes";
+import { dynamoAiStore } from "./ai/store";
+import type { ReviewMessage } from "./ai/types";
 import { makeAttemptHandler } from "./attempt";
 import { json } from "./http";
 import { makePredictHandler } from "./predict";
@@ -27,6 +31,17 @@ const table = process.env.TABLE_NAME ?? "";
 const predictions = dynamoPredictionStore(table);
 const reviews = dynamoReviewStore(table);
 const lambda = new LambdaClient({});
+const sqs = new SQSClient({});
+const queueReview = async (message: ReviewMessage) => {
+  await sqs.send(new SendMessageCommand({ QueueUrl: process.env.REVIEW_QUEUE_URL, MessageBody: JSON.stringify(message) }));
+};
+const ai = makeAiRoutes({
+  store: dynamoAiStore(table),
+  reviews,
+  enqueue: queueReview,
+  capUsd: Number(process.env.BUDGET_CAP ?? 0),
+  now: Date.now,
+});
 const sync = makeSyncRoutes({
   store: dynamoSyncStore(table),
   // "Event" = start it and return at once; the page polls for the result.
@@ -42,11 +57,14 @@ export const handler = makeApiHandler({
   "GET /api/me": async () => json(200, { loggedIn: true }),
   "GET /api/problems/{slug}": makeProblemHandler({ fetchProblem, predictions, reviews, now: Date.now }),
   "POST /api/predictions": makePredictHandler({ predictions, now: Date.now }),
-  "POST /api/attempts": makeAttemptHandler({ reviews, predictions, now: Date.now }),
+  "POST /api/attempts": makeAttemptHandler({ reviews, predictions, queueReview, now: Date.now }),
   "GET /api/schedule": async () => json(200, await reviews.overview()),
   "GET /api/pending": async () => json(200, { submissions: await reviews.pending() }),
   "POST /api/uploads": uploadHandler,
   "POST /api/extension/pair": sync.pair,
   "GET /api/sync": sync.status,
   "POST /api/sync": sync.syncNow,
+  "POST /api/reviews": ai.request,
+  "GET /api/reviews": ai.list,
+  "GET /api/budget": ai.budget,
 });

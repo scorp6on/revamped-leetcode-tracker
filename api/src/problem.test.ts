@@ -38,7 +38,7 @@ const setup = ({
       return problem;
     },
     predictions: { latest: async () => latest },
-    reviews: { attempts: async () => attempts, pendingFor: async () => waiting },
+    reviews: { attempts: async () => attempts, pendingFor: async () => waiting, aiReviews: async () => [] },
     now: () => NOW,
   });
   return async (slug: string) => {

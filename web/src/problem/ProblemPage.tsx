@@ -6,11 +6,13 @@ import { api } from "../api";
 import { DifficultyBadge } from "../components/DifficultyBadge";
 import { Button, buttonVariants } from "../components/ui/button";
 import { Label } from "../components/ui/label";
+import type { AiReview } from "../../../api/src/ai/types";
 import type { Attempt } from "../../../api/src/review/types";
+import { isReviewPending } from "./AiReviewView";
 import { PastAttempts } from "./PastAttempts";
 import { RecordAttempt } from "./RecordAttempt";
 
-type Load = "loading" | "not-found" | "error" | { problem: Problem; prediction: Prediction | null; attempts: Attempt[] };
+type Load = "loading" | "not-found" | "error" | { problem: Problem; prediction: Prediction | null; attempts: Attempt[]; aiReviews: AiReview[] };
 // A prediction is locked as soon as you open LeetCode; the save runs alongside the new tab.
 type Locked = { text: string; status: "saving" | "saved" | "failed" };
 
@@ -63,10 +65,12 @@ function ProblemView({
   problem,
   prediction,
   attempts: loaded,
+  aiReviews: loadedReviews,
 }: {
   problem: Problem;
   prediction: Prediction | null;
   attempts: Attempt[];
+  aiReviews: AiReview[];
 }) {
   const statement = useMemo(
     // LeetCode's HTML goes into our page, so anything executable is stripped first (#45).
@@ -78,6 +82,20 @@ function ProblemView({
   // A recorded attempt claims the prediction, so the panel starts fresh for the next attempt.
   const [panel, setPanel] = useState({ key: 0, saved: prediction });
   const [attempts, setAttempts] = useState(loaded);
+  const [aiReviews, setAiReviews] = useState(loadedReviews);
+  // While a review is on its way, check for it every 10 s (#24, #58).
+  const pending = attempts.some((a) => isReviewPending(a, aiReviews.find((r) => r.attemptCreatedAt === a.createdAt)));
+  useEffect(() => {
+    if (!pending) return;
+    const id = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void api(`/api/reviews?problemId=${problem.id}`)
+        .then((res) => (res.ok ? (res.json() as Promise<{ reviews: AiReview[] }>) : null))
+        .then((body) => body && setAiReviews(body.reviews))
+        .catch(() => {});
+    }, 10_000);
+    return () => clearInterval(id);
+  }, [pending, problem.id]);
   // When your prediction locked: the start of the pre-filled minutes (#57).
   const [predictionAt, setPredictionAt] = useState(prediction?.createdAt ?? null);
 
@@ -136,7 +154,17 @@ function ProblemView({
               setAttempts((list) => [attempt, ...list]);
             }}
           />
-          <PastAttempts attempts={attempts} />
+          <PastAttempts
+            attempts={attempts}
+            aiReviews={aiReviews}
+            onReviewRequested={(a) => {
+              // Clear any old status and show "Reviewing…" until the new one lands.
+              setAiReviews((list) => list.filter((r) => r.attemptCreatedAt !== a.createdAt));
+              setAttempts((list) =>
+                list.map((x) => (x.createdAt === a.createdAt ? { ...x, reviewQueuedAt: new Date().toISOString() } : x)),
+              );
+            }}
+          />
         </>
       )}
     </>

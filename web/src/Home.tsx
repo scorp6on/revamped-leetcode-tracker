@@ -1,3 +1,4 @@
+import { BudgetBanner } from "./budget/BudgetBanner";
 import { Problems } from "./catalog/Problems";
 import { Queue } from "./queue/Queue";
 import { useSchedule } from "./queue/useSchedule";
@@ -9,6 +10,7 @@ export function Home() {
   return (
     <main className="mx-auto flex w-full max-w-[1120px] flex-col gap-10 px-4 py-8 sm:px-6 sm:py-10">
       <SyncLine />
+      <BudgetBanner />
       <Queue data={schedule} />
       <Problems schedules={typeof schedule === "object" ? schedule.schedules : []} />
     </main>

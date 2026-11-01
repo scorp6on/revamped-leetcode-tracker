@@ -4,7 +4,8 @@
   "scripts": {
     "typecheck": "tsc -p .",
     "cdk": "cdk",
-    "set-password": "tsx scripts/set-password.ts"
+    "set-password": "tsx scripts/set-password.ts",
+    "set-anthropic-key": "tsx scripts/set-anthropic-key.ts"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.170.0",

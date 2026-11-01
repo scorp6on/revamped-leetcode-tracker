@@ -1,5 +1,7 @@
+import type { AiReview } from "../../../api/src/ai/types";
 import { FAILURE_MODES, NOTE_SECTIONS, type Attempt, type NoteSection } from "../../../api/src/review/types";
 import { Markdown } from "../notes/Markdown";
+import { AiReviewView } from "./AiReviewView";
 
 const OUTCOME_LABEL = { solved: "Solved", struggled: "Struggled", failed: "Failed" } as const;
 
@@ -12,7 +14,15 @@ const summary = (a: Attempt) =>
     .join(" · ");
 
 // Your attempts on this problem, newest first (#53): an early slice of the Profile timeline (M10).
-export function PastAttempts({ attempts }: { attempts: Attempt[] }) {
+export function PastAttempts({
+  attempts,
+  aiReviews,
+  onReviewRequested,
+}: {
+  attempts: Attempt[];
+  aiReviews: AiReview[];
+  onReviewRequested: (attempt: Attempt) => void;
+}) {
   if (!attempts.length) return null;
   return (
     <details className="group rounded-[10px] border">
@@ -42,6 +52,11 @@ export function PastAttempts({ attempts }: { attempts: Attempt[] }) {
               {!a.prediction && !a.notes?.trim() && !(Object.keys(NOTE_SECTIONS) as NoteSection[]).some((s) => a[s]?.trim()) && (
                 <p className="text-muted-foreground">No notes.</p>
               )}
+              <AiReviewView
+                attempt={a}
+                review={aiReviews.find((r) => r.attemptCreatedAt === a.createdAt)}
+                onRequested={() => onReviewRequested(a)}
+              />
             </div>
           </details>
         ))}

@@ -10,9 +10,11 @@ import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import { NodejsFunction, type NodejsFunctionProps } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
+import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as cr from "aws-cdk-lib/custom-resources";
 import * as triggers from "aws-cdk-lib/triggers";
 import type { Construct } from "constructs";
@@ -64,7 +66,7 @@ export class AppStack extends cdk.Stack {
 
     // Secrets are written by `npm run set-password` (CloudFormation can't create SecureStrings).
     const paramPrefix = `/leetcode-tracker/${props.stage}`;
-    const canReadSecret = (fn: lambda.IFunction, name: "password-hash" | "jwt-secret") =>
+    const canReadSecret = (fn: lambda.IFunction, name: "password-hash" | "jwt-secret" | "anthropic-api-key") =>
       fn.addToRolePolicy(
         new iam.PolicyStatement({
           actions: ["ssm:GetParameter"],
@@ -142,7 +144,7 @@ export class AppStack extends cdk.Stack {
           "dynamodb:ConditionCheckItem",
         ],
         resources: [table.tableArn],
-        conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["PROBLEM#*", "SYNC", "SUB#*"] } },
+        conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["PROBLEM#*", "SYNC", "SUB#*", "BUDGET#*"] } },
       }),
     );
     apiFn.addToRolePolicy(
@@ -178,6 +180,33 @@ export class AppStack extends cdk.Stack {
         targets: [new targets.LambdaFunction(backupFn)],
       });
     }
+    // AI review (#25, #58): saving a grade drops a message on this queue, so nothing waits on Claude.
+    const reviewDlq = new sqs.Queue(this, "ReviewDeadLetters", { retentionPeriod: cdk.Duration.days(14) });
+    const reviewQueue = new sqs.Queue(this, "ReviewQueue", {
+      // Longer than the Lambda's timeout, so a running review isn't delivered twice.
+      visibilityTimeout: cdk.Duration.minutes(5),
+      deadLetterQueue: { queue: reviewDlq, maxReceiveCount: 3 },
+    });
+    const budgetCap = props.stage === "prod" ? "10" : "2"; // #33, #36
+    const reviewFn = fn("ReviewFn", "review.ts", { timeout: cdk.Duration.minutes(2), memorySize: 256 });
+    reviewFn.addEnvironment("BUDGET_CAP", budgetCap);
+    // The only Lambda that can read the API key (#27).
+    canReadSecret(reviewFn, "anthropic-api-key");
+    reviewFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"],
+        resources: [table.tableArn],
+        conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["PROBLEM#*", "BUDGET#*"] } },
+      }),
+    );
+    reviewFn.addEventSource(new SqsEventSource(reviewQueue, { batchSize: 1 }));
+    reviewQueue.grantSendMessages(apiFn);
+    apiFn.addEnvironment("REVIEW_QUEUE_URL", reviewQueue.queueUrl);
+    apiFn.addEnvironment("BUDGET_CAP", budgetCap);
+    route("/api/reviews", apigw.HttpMethod.POST, apiFn);
+    route("/api/reviews", apigw.HttpMethod.GET, apiFn);
+    route("/api/budget", apigw.HttpMethod.GET, apiFn);
+
     // Public: the extension has no login cookie, so the Ingest Lambda checks its token.
     route("/api/ext/sync", apigw.HttpMethod.POST, ingestFn, true);
     route("/api/extension/pair", apigw.HttpMethod.POST, apiFn);

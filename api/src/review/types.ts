@@ -53,6 +53,7 @@ export interface Attempt extends AttemptInput {
   notes?: string; // the single note box of attempts recorded before M4.5 (#53)
   submissionIds?: string[]; // the synced submissions this grade covers (#57)
   code?: string | null; // the last accepted code among them, for the AI review (M8)
+  reviewQueuedAt?: string; // when the AI review was queued (#58)
 }
 
 export interface ReviewState {

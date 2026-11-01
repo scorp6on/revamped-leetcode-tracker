@@ -5,6 +5,7 @@ import { makeAttemptHandler } from "./attempt";
 import { PREDICTION_WINDOW_MS } from "./problems/prediction";
 import type { Prediction } from "./problems/types";
 import type { ReviewStore } from "./review/store";
+import type { ReviewMessage } from "./ai/types";
 import type { Schedule } from "./review/types";
 import type { Submission } from "./sync/types";
 
@@ -34,11 +35,16 @@ const prediction = (ageMs: number, claimed = false): Prediction => ({
   claimed,
 });
 
-const setup = ({ current, latest, waiting = [] }: { current?: Schedule; latest?: Prediction; waiting?: Submission[] } = {}) => {
+const setup = ({ current, latest, waiting = [], queueFails = false }: { current?: Schedule; latest?: Prediction; waiting?: Submission[]; queueFails?: boolean } = {}) => {
+  const queued: ReviewMessage[] = [];
   const recorded: Parameters<ReviewStore["record"]>[0][] = [];
   const handler = makeAttemptHandler({
     reviews: { schedule: async () => current, pendingFor: async () => waiting, record: async (c) => void recorded.push(c) },
     predictions: { latest: async () => latest },
+    queueReview: async (m) => {
+      if (queueFails) throw new Error("SQS down");
+      queued.push(m);
+    },
     now: () => NOW,
   });
   const post = async (body: unknown) => {
@@ -48,7 +54,7 @@ const setup = ({ current, latest, waiting = [] }: { current?: Schedule; latest?:
     };
     return { statusCode: res.statusCode, body: JSON.parse(res.body) };
   };
-  return { post, recorded };
+  return { post, recorded, queued };
 };
 
 describe("POST /api/attempts", () => {
@@ -139,6 +145,21 @@ describe("POST /api/attempts", () => {
     ];
     for (const patch of bad) expect((await post({ ...valid, ...patch })).statusCode, JSON.stringify(patch)).toBe(400);
     expect(recorded).toHaveLength(0);
+  });
+});
+
+describe("queueing the AI review (#58)", () => {
+  it("queues a review for the saved attempt", async () => {
+    const { post, queued, recorded } = setup();
+    await post(valid);
+    expect(queued).toEqual([{ problemId: "1", createdAt: recorded[0].attempt.createdAt }]);
+    expect(recorded[0].attempt.reviewQueuedAt).toBe(new Date(NOW).toISOString());
+  });
+
+  it("still saves the grade when the queue is down", async () => {
+    const { post, recorded } = setup({ queueFails: true });
+    expect((await post(valid)).statusCode).toBe(201);
+    expect(recorded).toHaveLength(1);
   });
 });
 
