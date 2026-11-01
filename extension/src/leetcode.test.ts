@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fromGraphql, fromRest, newerThan } from "./leetcode";
+import { fromGraphql, fromRest, judged, newerThan } from "./leetcode";
 
 const row = (id: string) => fromGraphql({
   id, title: "Two Sum", titleSlug: "two-sum", statusDisplay: "Accepted", lang: "python3", runtime: "52 ms", memory: "17 MB", timestamp: "1793390000",
@@ -16,6 +16,15 @@ describe("reading LeetCode's answers", () => {
       id: "1500000123", slug: "two-sum", title: "Two Sum", status: "Wrong Answer", accepted: false,
       lang: "python3", runtime: "N/A", memory: null, timestamp: 1793390000, code: "class Solution: ...",
     });
+  });
+
+  it("leaves rows LeetCode is still judging for the next sync", () => {
+    const base = {
+      title: "Two Sum", title_slug: "two-sum", status_display: "Accepted", lang: "python3",
+      runtime: "52 ms", memory: "17 MB", timestamp: 1793390000, code: "",
+    };
+    const rows = [{ ...base, id: 2, is_pending: "Pending" }, { ...base, id: 1, is_pending: "Not Pending" }];
+    expect(judged(rows).map((r) => r.id)).toEqual([1]);
   });
 
   it("turns a GraphQL row into a submission, without code", () => {

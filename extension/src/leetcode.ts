@@ -19,7 +19,11 @@ export interface RestRow {
   memory: string;
   timestamp: number;
   code: string;
+  is_pending?: string; // "Not Pending" once judged
 }
+
+// Rows LeetCode is still judging are left for the next sync: saved now, their status would stick.
+export const judged = (rows: RestRow[]) => rows.filter((r) => !r.is_pending || r.is_pending === "Not Pending");
 
 // One row of GraphQL submissionList (the fallback; no code).
 export interface GraphqlRow {
@@ -89,7 +93,7 @@ async function restPage(offset: number): Promise<Sent[]> {
   const res = await fetch(`${ORIGIN}/api/submissions/?offset=${offset}&limit=${PAGE}`, { credentials: "include" });
   const body = await res.json().catch(() => null); // a Cloudflare page isn't JSON
   if (!res.ok || !Array.isArray(body?.submissions_dump)) throw new Error(`history request answered ${res.status}`);
-  return (body.submissions_dump as RestRow[]).map(fromRest);
+  return judged(body.submissions_dump as RestRow[]).map(fromRest);
 }
 
 const LIST = `query list($offset: Int!, $limit: Int!) {
