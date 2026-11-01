@@ -188,6 +188,7 @@ export class AppStack extends cdk.Stack {
     route("/api/predictions", apigw.HttpMethod.POST, apiFn);
     route("/api/attempts", apigw.HttpMethod.POST, apiFn);
     route("/api/schedule", apigw.HttpMethod.GET, apiFn);
+    route("/api/pending", apigw.HttpMethod.GET, apiFn);
     route("/api/uploads", apigw.HttpMethod.POST, apiFn);
 
     const site = new s3.Bucket(this, "Site", {

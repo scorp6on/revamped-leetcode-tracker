@@ -4,6 +4,8 @@ import { api, setUnauthorizedHandler } from "./api";
 import { AppHeader } from "./components/AppHeader";
 import { Home } from "./Home";
 import { Login } from "./Login";
+import { Notification } from "./pending/Notification";
+import { PendingProvider } from "./pending/PendingContext";
 import { ProblemPage } from "./problem/ProblemPage";
 import { ScrollMemory } from "./ScrollMemory";
 import { useTheme } from "./theme";
@@ -28,26 +30,29 @@ export function App() {
     setSession("out");
   };
 
-  return (
-    <div className="flex min-h-svh flex-col">
-      <AppHeader
-        theme={theme}
-        onToggleTheme={toggle}
-        loggedIn={session === "in"}
-        onLogout={logout}
-      />
-      {session === "out" && <Login onLoggedIn={() => setSession("in")} />}
-      {session === "in" && <ScrollMemory />}
-      {session === "in" && (
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/problems/:slug" element={<ProblemPage />} />
-          <Route
-            path="*"
-            element={<p className="mx-auto w-full max-w-[1120px] px-6 py-10 text-muted-foreground">Page not found.</p>}
-          />
-        </Routes>
+    return (
+      <PendingProvider enabled={session === "in"}>
+      <div className="flex min-h-svh flex-col">
+        <AppHeader
+          theme={theme}
+          onToggleTheme={toggle}
+          loggedIn={session === "in"}
+          onLogout={logout}
+        />
+        {session === "out" && <Login onLoggedIn={() => setSession("in")} />}
+        {session === "in" && <ScrollMemory />}
+        {session === "in" && <Notification />}
+        {session === "in" && (
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/problems/:slug" element={<ProblemPage />} />
+            <Route
+              path="*"
+              element={<p className="mx-auto w-full max-w-[1120px] px-6 py-10 text-muted-foreground">Page not found.</p>}
+            />
+          </Routes>
       )}
     </div>
+    </PendingProvider>
   );
 }

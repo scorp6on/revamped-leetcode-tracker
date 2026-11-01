@@ -1,5 +1,6 @@
 import { NavLink } from "react-router";
 import { cn } from "../lib/utils";
+import { Bell } from "../pending/Bell";
 import type { Theme } from "../theme";
 import { Button } from "./ui/button";
 
@@ -52,6 +53,7 @@ export function AppHeader({
           </div>
         )}
         <div className="ml-auto flex items-center gap-2">
+          {loggedIn && <Bell />}
           <Button
             variant="outline"
             size="icon"

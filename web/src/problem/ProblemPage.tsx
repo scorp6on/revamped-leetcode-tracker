@@ -78,6 +78,8 @@ function ProblemView({
   // A recorded attempt claims the prediction, so the panel starts fresh for the next attempt.
   const [panel, setPanel] = useState({ key: 0, saved: prediction });
   const [attempts, setAttempts] = useState(loaded);
+  // When your prediction locked: the start of the pre-filled minutes (#57).
+  const [predictionAt, setPredictionAt] = useState(prediction?.createdAt ?? null);
 
   return (
     <>
@@ -118,11 +120,19 @@ function ProblemView({
       ) : (
         <>
           {statement && <div className="statement" dangerouslySetInnerHTML={{ __html: statement }} />}
-          <PredictionPanel key={panel.key} problem={problem} saved={panel.saved} leetCodeUrl={leetCodeUrl} />
+          <PredictionPanel
+            key={panel.key}
+            problem={problem}
+            saved={panel.saved}
+            leetCodeUrl={leetCodeUrl}
+            onLocked={() => setPredictionAt(new Date().toISOString())}
+          />
           <RecordAttempt
             problem={problem}
+            predictionAt={predictionAt}
             onRecorded={(attempt) => {
               setPanel(({ key }) => ({ key: key + 1, saved: null }));
+              setPredictionAt(null);
               setAttempts((list) => [attempt, ...list]);
             }}
           />
@@ -137,16 +147,19 @@ function PredictionPanel({
   problem,
   saved,
   leetCodeUrl,
+  onLocked,
 }: {
   problem: Problem;
   saved: Prediction | null;
   leetCodeUrl: string;
+  onLocked: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [locked, setLocked] = useState<Locked | null>(saved && { text: saved.text, status: "saved" });
 
   const save = async (text: string) => {
     setLocked({ text, status: "saving" });
+    onLocked();
     try {
       const res = await api("/api/predictions", {
         method: "POST",

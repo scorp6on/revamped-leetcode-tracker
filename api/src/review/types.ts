@@ -51,6 +51,8 @@ export interface Attempt extends AttemptInput {
   quality: number; // the 0–5 SM-2 grade it produced
   prediction: string | null; // the claimed prediction's text, if any
   notes?: string; // the single note box of attempts recorded before M4.5 (#53)
+  submissionIds?: string[]; // the synced submissions this grade covers (#57)
+  code?: string | null; // the last accepted code among them, for the AI review (M8)
 }
 
 export interface ReviewState {

@@ -18,9 +18,10 @@ import {
   type FailureMode,
   type Schedule,
 } from "./review/types";
+import type { Submission } from "./sync/types";
 
 export interface AttemptDeps {
-  reviews: Pick<ReviewStore, "schedule" | "record">;
+  reviews: Pick<ReviewStore, "schedule" | "record" | "pendingFor">;
   predictions: Pick<PredictionStore, "latest">;
   now: () => number;
 }
@@ -72,6 +73,15 @@ export function parseAttempt(body: Record<string, unknown>): AttemptInput | stri
   };
 }
 
+// A DynamoDB transaction holds 100 items; the attempt, schedule and prediction take 3.
+const MAX_GRADED = 97;
+
+// The code the AI review should read: the newest accepted, else the newest known.
+const lastCode = (subs: Submission[]) => {
+  const known = subs.filter((s) => s.code);
+  return (known.filter((s) => s.accepted).at(-1) ?? known.at(-1))?.code ?? null;
+};
+
 export const makeAttemptHandler =
   ({ reviews, predictions, now }: AttemptDeps) =>
   async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
@@ -79,17 +89,33 @@ export const makeAttemptHandler =
     if (typeof input === "string") return json(400, { error: input });
 
     const t = now();
-    const [current, latest] = await Promise.all([
+    const [current, latest, pending] = await Promise.all([
       reviews.schedule(input.problemId),
       predictions.latest(input.problemId),
+      reviews.pendingFor(input.slug),
     ]);
-    // Claims the newest prediction if it's unclaimed and within the lock window (#41, #46).
-    const claim = latest && isActive(latest, t) ? latest : undefined;
+    // Everything waiting on this problem becomes this one grade (#57).
+    const waiting = pending.slice(0, MAX_GRADED);
+    const firstAt = waiting.length ? waiting[0].timestamp * 1000 : null;
+    // Claims the newest prediction if it's unclaimed and within the lock window (#41, #46). For a
+    // synced attempt that's measured from your first submission, not from when you grade (#57),
+    // and a prediction made after you submitted predicted nothing.
+    const claim =
+      latest && isActive(latest, firstAt ?? t) && (firstAt === null || Date.parse(latest.createdAt) <= firstAt)
+        ? latest
+        : undefined;
 
-    const createdAt = new Date(t).toISOString();
+    // Synced attempts are dated by when you solved, not when you graded (#57).
+    const createdAt = new Date(waiting.length ? waiting[waiting.length - 1].timestamp * 1000 : t).toISOString();
     const quality = qualityFor(input.outcome, input.confidence);
     const next = nextReview(current ?? NEW_STATE, quality, input.localDate);
-    const attempt: Attempt = { ...input, createdAt, quality, prediction: claim?.text ?? null };
+    const attempt: Attempt = {
+      ...input,
+      createdAt,
+      quality,
+      prediction: claim?.text ?? null,
+      ...(waiting.length ? { submissionIds: waiting.map((s) => s.id), code: lastCode(waiting) } : {}),
+    };
     const failureModes = { ...current?.failureModes };
     if (input.failureMode) failureModes[input.failureMode] = (failureModes[input.failureMode] ?? 0) + 1;
     const schedule: Schedule = {
@@ -106,7 +132,7 @@ export const makeAttemptHandler =
     };
 
     try {
-      await reviews.record({ attempt, schedule, claim });
+      await reviews.record({ attempt, schedule, claim, submissionIds: attempt.submissionIds });
     } catch (err) {
       // e.g. the prediction was claimed by a double-tap a moment earlier.
       if ((err as Error).name === "TransactionCanceledException") {

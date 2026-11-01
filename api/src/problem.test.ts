@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { makeProblemHandler } from "./problem";
 import type { Prediction, Problem } from "./problems/types";
 import type { Attempt } from "./review/types";
+import type { Submission } from "./sync/types";
 import { PREDICTION_WINDOW_MS } from "./problems/prediction";
 
 const NOW = Date.parse("2026-10-28T12:00:00Z");
@@ -29,6 +30,7 @@ const setup = ({
   problem = twoSum as Problem | null | Error,
   latest = undefined as Prediction | undefined,
   attempts = [] as Attempt[],
+  waiting = [] as Submission[],
 } = {}) => {
   const handler = makeProblemHandler({
     fetchProblem: async () => {
@@ -36,7 +38,7 @@ const setup = ({
       return problem;
     },
     predictions: { latest: async () => latest },
-    reviews: { attempts: async () => attempts },
+    reviews: { attempts: async () => attempts, pendingFor: async () => waiting },
     now: () => NOW,
   });
   return async (slug: string) => {
@@ -85,6 +87,13 @@ describe("GET /api/problems/{slug}", () => {
     const attempts = [{ createdAt: "2026-10-28T10:00:00.000Z" }, { createdAt: "2026-10-27T10:00:00.000Z" }] as Attempt[];
     expect((await setup({ attempts })("two-sum")).body.attempts).toEqual(attempts);
     expect((await setup({ attempts, problem: { ...twoSum, paid: true } })("two-sum")).body.attempts).toEqual([]);
+  });
+
+  it("keeps a prediction for a late grade: the window runs from the first waiting submission", async () => {
+    const latest = predictionAt(NOW - 24 * 3600_000);
+    const waiting = [{ timestamp: Math.floor((NOW - 23 * 3600_000) / 1000) }] as Submission[];
+    expect((await setup({ latest, waiting })("two-sum")).body.prediction).toEqual(latest);
+    expect((await setup({ latest })("two-sum")).body.prediction).toBeNull();
   });
 
   it("leaves out a prediction that's claimed or older than 6 hours", async () => {

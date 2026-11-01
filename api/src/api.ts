@@ -44,6 +44,7 @@ export const handler = makeApiHandler({
   "POST /api/predictions": makePredictHandler({ predictions, now: Date.now }),
   "POST /api/attempts": makeAttemptHandler({ reviews, predictions, now: Date.now }),
   "GET /api/schedule": async () => json(200, await reviews.overview()),
+  "GET /api/pending": async () => json(200, { submissions: await reviews.pending() }),
   "POST /api/uploads": uploadHandler,
   "POST /api/extension/pair": sync.pair,
   "GET /api/sync": sync.status,

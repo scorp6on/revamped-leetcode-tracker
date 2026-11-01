@@ -7,6 +7,7 @@ import {
   type QueryCommandInput,
 } from "@aws-sdk/lib-dynamodb";
 import type { Prediction } from "../problems/types";
+import type { Submission } from "../sync/types";
 import type { Attempt, RecentFailure, Schedule, ScheduleResponse } from "./types";
 
 // GSI1 is one overloaded index with two "drawers": ATTEMPTS (by time) and DUE (by due date).
@@ -16,8 +17,11 @@ const RECENT_ATTEMPTS = 50;
 export interface ReviewStore {
   schedule(problemId: string): Promise<Schedule | undefined>;
   attempts(problemId: string): Promise<Attempt[]>; // newest first
-  // All three writes land together or not at all.
-  record(change: { attempt: Attempt; schedule: Schedule; claim?: Prediction }): Promise<void>;
+  // Waiting to be graded, oldest first (#57).
+  pending(): Promise<Submission[]>;
+  pendingFor(slug: string): Promise<Submission[]>;
+  // Every write lands together or not at all.
+  record(change: { attempt: Attempt; schedule: Schedule; claim?: Prediction; submissionIds?: string[] }): Promise<void>;
   overview(): Promise<ScheduleResponse>;
 }
 
@@ -58,7 +62,21 @@ export const dynamoReviewStore = (tableName: string): ReviewStore => {
       return items.map((a) => strip<Attempt>(a));
     },
 
-    async record({ attempt, schedule, claim }) {
+    async pending() {
+      const items = await queryAll({
+        TableName: tableName,
+        IndexName: INDEX,
+        KeyConditionExpression: "GSI1PK = :p",
+        ExpressionAttributeValues: { ":p": "PENDING" },
+      });
+      return items.map((s) => strip<Submission>(s));
+    },
+
+    async pendingFor(slug) {
+      return (await this.pending()).filter((s) => s.slug === slug);
+    },
+
+    async record({ attempt, schedule, claim, submissionIds = [] }) {
       const pk = `PROBLEM#${attempt.problemId}`;
       await db.send(
         new TransactWriteCommand({
@@ -89,6 +107,16 @@ export const dynamoReviewStore = (tableName: string): ReviewStore => {
                   },
                 ]
               : []),
+            // Graded: out of the PENDING drawer, so it's never graded twice.
+            ...submissionIds.map((id) => ({
+              Update: {
+                TableName: tableName,
+                Key: { PK: `SUB#${id}`, SK: "SUB" },
+                UpdateExpression: "SET gradedAt = :at REMOVE GSI1PK, GSI1SK",
+                ConditionExpression: "attribute_exists(GSI1PK)",
+                ExpressionAttributeValues: { ":at": attempt.createdAt },
+              },
+            })),
           ],
         }),
       );

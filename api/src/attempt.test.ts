@@ -6,6 +6,7 @@ import { PREDICTION_WINDOW_MS } from "./problems/prediction";
 import type { Prediction } from "./problems/types";
 import type { ReviewStore } from "./review/store";
 import type { Schedule } from "./review/types";
+import type { Submission } from "./sync/types";
 
 const NOW = Date.parse("2026-10-28T20:00:00Z");
 
@@ -33,10 +34,10 @@ const prediction = (ageMs: number, claimed = false): Prediction => ({
   claimed,
 });
 
-const setup = ({ current, latest }: { current?: Schedule; latest?: Prediction } = {}) => {
+const setup = ({ current, latest, waiting = [] }: { current?: Schedule; latest?: Prediction; waiting?: Submission[] } = {}) => {
   const recorded: Parameters<ReviewStore["record"]>[0][] = [];
   const handler = makeAttemptHandler({
-    reviews: { schedule: async () => current, record: async (c) => void recorded.push(c) },
+    reviews: { schedule: async () => current, pendingFor: async () => waiting, record: async (c) => void recorded.push(c) },
     predictions: { latest: async () => latest },
     now: () => NOW,
   });
@@ -138,6 +139,53 @@ describe("POST /api/attempts", () => {
     ];
     for (const patch of bad) expect((await post({ ...valid, ...patch })).statusCode, JSON.stringify(patch)).toBe(400);
     expect(recorded).toHaveLength(0);
+  });
+});
+
+describe("grading synced submissions (#57)", () => {
+  const HOUR = 3600_000;
+  const sub = (id: string, at: number, extra: Partial<Submission> = {}): Submission => ({
+    id, slug: "two-sum", title: "Two Sum", status: "Accepted", accepted: true, lang: "python3",
+    runtime: null, memory: null, timestamp: Math.floor(at / 1000), code: `code ${id}`, source: "extension", ...extra,
+  });
+
+  it("turns everything waiting into one attempt, dated by the last submission, and clears it", async () => {
+    const waiting = [sub("1", NOW - 30 * HOUR, { accepted: false }), sub("2", NOW - 29 * HOUR), sub("3", NOW - 28 * HOUR, { accepted: false })];
+    const { post, recorded } = setup({ waiting });
+    expect((await post({ ...valid, localDate: "2026-10-27" })).statusCode).toBe(201);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].submissionIds).toEqual(["1", "2", "3"]);
+    expect(recorded[0].attempt.createdAt).toBe(new Date(NOW - 28 * HOUR).toISOString());
+    expect(recorded[0].attempt.code).toBe("code 2"); // the accepted one, not the newest
+    expect(recorded[0].schedule.due).toBe("2026-10-28"); // counted from the day you solved
+  });
+
+  it("claims a prediction made within 6 hours before the first submission, even a day later", async () => {
+    const latest = prediction(26 * HOUR);
+    const { post, recorded } = setup({ latest, waiting: [sub("1", NOW - 25 * HOUR)] });
+    await post(valid);
+    expect(recorded[0].claim).toEqual(latest);
+  });
+
+  it("doesn't claim a prediction made after you submitted, or long before", async () => {
+    for (const latest of [prediction(HOUR), prediction(40 * HOUR)]) {
+      const { post, recorded } = setup({ latest, waiting: [sub("1", NOW - 25 * HOUR)] });
+      await post(valid);
+      expect(recorded[0].claim).toBeUndefined();
+    }
+  });
+
+  it("keeps the code empty when only the backup poll saw it", async () => {
+    const { post, recorded } = setup({ waiting: [sub("1", NOW, { code: null, source: "public" })] });
+    await post(valid);
+    expect(recorded[0].attempt.code).toBeNull();
+  });
+
+  it("leaves a manual attempt with nothing waiting as it was", async () => {
+    const { post, recorded } = setup();
+    await post(valid);
+    expect(recorded[0].submissionIds).toBeUndefined();
+    expect(recorded[0].attempt.createdAt).toBe(new Date(NOW).toISOString());
   });
 });
 

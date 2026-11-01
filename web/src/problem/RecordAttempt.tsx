@@ -1,4 +1,4 @@
-import { useCallback, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import type { Problem } from "../../../api/src/problems/types";
 import { daysBetween } from "../../../api/src/review/dates";
 import {
@@ -15,6 +15,8 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { NoteEditor } from "../notes/NoteEditor";
+import { prefillMinutes } from "../pending/group";
+import { usePending } from "../pending/PendingContext";
 import { localToday } from "../queue/rank";
 import { shortDate } from "../queue/useSchedule";
 
@@ -22,11 +24,28 @@ const OUTCOME_LABEL: Record<Outcome, string> = { solved: "Solved", struggled: "S
 const fieldClass =
   "rounded-lg border bg-background px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring sm:text-sm";
 
-// Recording by hand (#19); synced submissions get the same form in M7.
-export function RecordAttempt({ problem, onRecorded }: { problem: Problem; onRecorded: (attempt: Attempt) => void }) {
+// One form per problem (#57): recording by hand (#19), or grading what's synced and waiting.
+export function RecordAttempt({
+  problem,
+  predictionAt,
+  onRecorded,
+}: {
+  problem: Problem;
+  predictionAt: string | null;
+  onRecorded: (attempt: Attempt) => void;
+}) {
+  const { groups, refresh } = usePending();
+  const waiting = groups.find((g) => g.slug === problem.slug)?.submissions ?? [];
+  const lastWaiting = waiting[waiting.length - 1];
   const [outcome, setOutcome] = useState<Outcome>();
   const [confidence, setConfidence] = useState<number>();
   const [minutes, setMinutes] = useState("");
+  const [minutesEdited, setMinutesEdited] = useState(false);
+  const prefilled = prefillMinutes(predictionAt, waiting);
+  // A starting point you can change (#57); never overwrites what you typed.
+  useEffect(() => {
+    if (!minutesEdited) setMinutes(prefilled === null ? "" : String(prefilled));
+  }, [prefilled, minutesEdited]);
   const [failureMode, setFailureMode] = useState<FailureMode | "">("");
   // The three note sections (#51).
   const [approach, setApproach] = useState("");
@@ -68,7 +87,8 @@ export function RecordAttempt({ problem, onRecorded }: { problem: Problem; onRec
           approach,
           learned,
           reflection,
-          localDate: localToday(),
+          // Synced attempts count from the day you solved, not the day you grade (#57).
+          localDate: localToday(lastWaiting ? new Date(lastWaiting.timestamp * 1000) : undefined),
         }),
       });
       const body = await res.json();
@@ -77,11 +97,13 @@ export function RecordAttempt({ problem, onRecorded }: { problem: Problem; onRec
       setOutcome(undefined);
       setConfidence(undefined);
       setMinutes("");
+      setMinutesEdited(false);
       setFailureMode("");
       setApproach("");
       setLearned("");
       setReflection("");
       onRecorded(body.attempt as Attempt);
+      void refresh();
     } catch {
       setResult({ ok: false, error: "Couldn't reach the server. Try again." });
     } finally {
@@ -91,9 +113,35 @@ export function RecordAttempt({ problem, onRecorded }: { problem: Problem; onRec
 
   return (
     <form onSubmit={submit} aria-labelledby="record-h" className="flex flex-col gap-5 rounded-[10px] border p-5">
-      <h2 id="record-h" className="text-base font-semibold">
-        Record attempt
-      </h2>
+      <div className="flex flex-wrap items-baseline gap-x-2.5">
+        <h2 id="record-h" className="text-base font-semibold">
+          {waiting.length ? "Grade this attempt" : "Record attempt"}
+        </h2>
+        {waiting.length > 1 && <span className="text-[13px] text-muted-foreground">{waiting.length} submissions become one grade</span>}
+      </div>
+
+      {waiting.length > 0 && (
+        <ul className="divide-y rounded-[10px] border">
+          {waiting.map((s) => (
+            <li key={s.id} className="px-3.5 py-2.5">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="font-mono text-[13px] text-muted-foreground">
+                  {new Date(s.timestamp * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                </span>
+                <span className="font-medium">{s.status}</span>
+                <span className="text-[13px] text-muted-foreground">{[s.lang, s.accepted ? s.runtime : null].filter(Boolean).join(" · ")}</span>
+              </div>
+              {/* Only what the extension synced has code; the backup poll doesn't (#57). */}
+              {s.code && (
+                <details className="mt-1">
+                  <summary className="flex min-h-11 cursor-pointer items-center text-[13px] text-muted-foreground">View code</summary>
+                  <pre className="overflow-x-auto rounded-lg border bg-subtle p-3 font-mono text-[13px] leading-normal">{s.code}</pre>
+                </details>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
 
       <Choices label="How did it go?">
         {(Object.keys(OUTCOME_LABEL) as Outcome[]).map((o) => (
@@ -124,9 +172,18 @@ export function RecordAttempt({ problem, onRecorded }: { problem: Problem; onRec
           id="minutes"
           inputMode="numeric"
           value={minutes}
-          onChange={(e) => setMinutes(e.target.value.replace(/\D/g, ""))}
+          onChange={(e) => {
+            setMinutesEdited(true);
+            setMinutes(e.target.value.replace(/\D/g, ""));
+          }}
           className="w-28 text-base sm:text-sm"
         />
+        {prefilled !== null && !minutesEdited && predictionAt && (
+          <span className="text-[13px] text-muted-foreground">
+            From your prediction at {new Date(predictionAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} to your last
+            submission. Change it if you took a break.
+          </span>
+        )}
       </div>
 
       <div className="flex flex-col gap-2">
@@ -155,12 +212,14 @@ export function RecordAttempt({ problem, onRecorded }: { problem: Problem; onRec
       <div className="flex flex-wrap items-center gap-3">
         {/* Saving mid-upload would store a note pointing at an image that isn't there yet (#53). */}
         <Button type="submit" disabled={!ready || busy || uploading > 0}>
-          {busy ? "Saving…" : uploading > 0 ? "Save attempt (waiting for upload)" : "Save attempt"}
+          {busy ? "Saving…" : uploading > 0 ? "Save attempt (waiting for upload)" : waiting.length ? "Save grade" : "Save attempt"}
         </Button>
         {result?.ok === true && (
           <p role="status">
-            Saved. Next review {shortDate(result.due)} (in {daysBetween(localToday(), result.due)} day
-            {daysBetween(localToday(), result.due) === 1 ? "" : "s"}).
+            Saved. Next review {shortDate(result.due)}
+            {daysBetween(localToday(), result.due) > 0
+              ? ` (in ${daysBetween(localToday(), result.due)} day${daysBetween(localToday(), result.due) === 1 ? "" : "s"}).`
+              : " (due now)."}
           </p>
         )}
         {result?.ok === false && <p role="alert">{result.error}</p>}

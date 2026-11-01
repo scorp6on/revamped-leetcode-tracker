@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { SyncStatus } from "../../../api/src/sync/types";
 import { api } from "../api";
 import { Button } from "../components/ui/button";
+import { usePending } from "../pending/PendingContext";
 import { askExtensionToSync } from "./extension";
 
 const POLL_MS = 10_000; // #24
@@ -16,9 +17,9 @@ export function ago(ms: number, now = Date.now()): string {
 }
 
 // Above the queue on Home (#56): what's waiting to be graded, when sync last ran, and Sync now.
-// M7 turns the waiting count into the grading flow.
 export function SyncLine() {
   const [status, setStatus] = useState<SyncStatus>();
+  const { setListOpen } = usePending();
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string>();
   const [token, setToken] = useState<string>();
@@ -100,11 +101,20 @@ export function SyncLine() {
   return (
     <section aria-label="Sync" className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className={status.pending ? "font-medium" : "text-muted-foreground"}>
-          {status.pending
-            ? `${status.pending} new submission${status.pending === 1 ? "" : "s"} waiting to be graded`
-            : "No new submissions"}
-        </span>
+        {status.pending ? (
+          <button
+            type="button"
+            className="min-h-11 cursor-pointer font-medium underline underline-offset-2"
+            onClick={() => {
+              window.scrollTo(0, 0);
+              setListOpen(true);
+            }}
+          >
+            {status.pending} new submission{status.pending === 1 ? "" : "s"} waiting to be graded
+          </button>
+        ) : (
+          <span className="text-muted-foreground">No new submissions</span>
+        )}
         <span className="text-[13px] text-muted-foreground">
           · {status.lastSyncAt ? `last synced ${ago(status.lastSyncAt)}` : "not synced yet"}
         </span>
