@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { Button, buttonVariants } from "../components/ui/button";
 import { countLabel } from "./group";
 import { usePending } from "./PendingContext";
 
-// One small notification at a time, one per waiting problem (#19, #57). Later dismisses it for this
-// visit; the bell still counts it. Nothing shows for the problem you're already on.
+const SHOW_MS = 5000;
+
+// One small notification at a time, one per waiting problem (#19, #57). It disappears after 5 s, or on
+// Later, for this visit; the bell still counts it. Nothing shows for the problem you're already on.
 export function Notification() {
   const { groups } = usePending();
   const { pathname } = useLocation();
@@ -13,6 +15,13 @@ export function Notification() {
   const dismiss = (slug: string) => setDismissed((d) => [...d, slug]);
 
   const g = groups.find((x) => !dismissed.includes(x.slug) && pathname !== `/problems/${x.slug}`);
+  const slug = g?.slug;
+  useEffect(() => {
+    if (!slug) return;
+    const id = setTimeout(() => dismiss(slug), SHOW_MS);
+    return () => clearTimeout(id);
+  }, [slug]);
+
   if (!g) return null;
   return (
     <aside
