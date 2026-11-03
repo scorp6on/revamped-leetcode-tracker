@@ -24,16 +24,19 @@ export function Sidebar({ lc, first, tiles }: { lc: LeetCodeProfileResponse | nu
   const username = data?.username ?? null;
 
   return (
-    <aside className="flex flex-col gap-4">
+    // min-w-0 keeps long names inside the sidebar's column instead of pushing into the calendar.
+    <aside className="flex min-w-0 flex-col gap-4">
       <div className="flex items-center gap-3.5 md:flex-col md:items-start">
         <Avatar src={profile?.avatar} name={profile?.name ?? username} className="size-16 text-2xl md:size-24 md:text-[34px]" />
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="truncate text-xl font-semibold tracking-tight">{profile?.name ?? username ?? "Your profile"}</span>
+        <div className="flex min-w-0 flex-col gap-0.5 md:w-full">
+          {/* A long name wraps rather than being cut off. */}
+          <span className="text-xl font-semibold tracking-tight [overflow-wrap:anywhere]">{profile?.name ?? username ?? "Your profile"}</span>
           {username && (
             <a
               href={`https://leetcode.com/u/${encodeURIComponent(username)}/`}
               target="_blank"
               rel="noopener noreferrer"
+              title={`@${username} on LeetCode`}
               className="truncate text-[13px] text-muted-foreground hover:text-foreground"
             >
               @{username} on LeetCode ↗
