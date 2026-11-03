@@ -128,6 +128,7 @@ describe("update expressions", () => {
 
 // An in-memory store that applies changes like DynamoDB would.
 const memoryStore = (sessions: Session[] = []) => {
+  const removed: string[] = [];
   const byId = new Map(sessions.map((s) => [s.id, structuredClone(s)]));
   const store: MockOaStore = {
     get: async (id) => structuredClone(byId.get(id)),
@@ -147,8 +148,13 @@ const memoryStore = (sessions: Session[] = []) => {
     saveList: async () => {},
     catalog: async () => [entry("1", { slug: "two-sum" })],
     solved: async () => new Set(),
+    remove: async (id) => {
+      if (byId.get(id)?.finishedAt) return false;
+      return byId.delete(id);
+    },
+    removePrediction: async (problemId, createdAt) => void removed.push(`${problemId}@${createdAt}`),
   };
-  return { store, byId };
+  return { store, byId, removed };
 };
 
 const T0 = Date.parse("2026-11-03T12:00:00.000Z");
@@ -238,6 +244,25 @@ describe("a mock OA from start to finish", () => {
     await routes.finish(event({ id: ID }, { codes: ["good"] }));
     await routes.finish(event({ id: ID }, { codes: ["other"] }));
     expect(runs).toHaveLength(1);
+  });
+
+  it("cancels a running test: it's deleted, with the predictions it locked", async () => {
+    const { routes, mem, tick } = setup();
+    await routes.start(event({}, { count: 1, minutes: 30, source: "catalog" }));
+    tick(60_000);
+    await routes.approach(event({ id: ID, index: "0" }, { text: "hash map" }));
+    expect(status(await routes.cancel(event({ id: ID })))).toBe(200);
+    expect(mem.byId.has(ID)).toBe(false);
+    expect(mem.removed).toEqual([`1@${new Date(T0 + 60_000).toISOString()}`]);
+    expect(status(await routes.get(event({ id: ID })))).toBe(404);
+  });
+
+  it("won't cancel a finished test", async () => {
+    const { routes, mem } = setup();
+    await routes.start(event({}, { count: 1, minutes: 30, source: "catalog" }));
+    await routes.finish(event({ id: ID }, {}));
+    expect(status(await routes.cancel(event({ id: ID })))).toBe(409);
+    expect(mem.byId.has(ID)).toBe(true);
   });
 
   it("says why when not enough problems match", async () => {

@@ -108,6 +108,7 @@ export const handler = makeApiHandler({
   "PUT /api/mockoa/list": mockOa.saveList,
   "GET /api/mockoa/{id}": mockOa.get,
   "POST /api/mockoa/{id}/finish": mockOa.finish,
+  "DELETE /api/mockoa/{id}": mockOa.cancel,
   "PUT /api/mockoa/{id}/problems/{index}": mockOa.save,
   "POST /api/mockoa/{id}/problems/{index}/approach": mockOa.approach,
   "POST /api/mockoa/{id}/problems/{index}/run": mockOa.run,

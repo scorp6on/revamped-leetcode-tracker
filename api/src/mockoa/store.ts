@@ -1,6 +1,6 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand, type QueryCommandInput } from "@aws-sdk/lib-dynamodb";
+import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand, type QueryCommandInput } from "@aws-sdk/lib-dynamodb";
 import type { Catalog, CatalogEntry } from "../catalog/types";
 import { INDEX } from "../review/store";
 import type { ListEntry, PastSession, Session } from "./types";
@@ -18,6 +18,8 @@ export interface MockOaStore {
   saveList(entries: ListEntry[]): Promise<void>;
   catalog(): Promise<CatalogEntry[]>;
   solved(): Promise<Set<string>>; // problem IDs you've solved at least once
+  remove(id: string): Promise<boolean>; // false if it finished in the meantime
+  removePrediction(problemId: string, createdAt: string): Promise<void>; // unless an attempt claimed it
 }
 
 const KEYS = ["PK", "SK", "GSI1PK", "GSI1SK"];
@@ -126,6 +128,40 @@ export const dynamoMockOaStore = (tableName: string, bucket: string): MockOaStor
       if (catalog) return catalog;
       const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: "data/catalog.json" }));
       return (catalog = (JSON.parse(await res.Body!.transformToString()) as Catalog).problems);
+    },
+
+    async remove(id) {
+      try {
+        await db.send(
+          new DeleteCommand({
+            TableName: tableName,
+            Key: key(id),
+            ConditionExpression: "#finishedAt = :none",
+            ExpressionAttributeNames: { "#finishedAt": "finishedAt" },
+            ExpressionAttributeValues: { ":none": null },
+          }),
+        );
+        return true;
+      } catch (err) {
+        if ((err as Error).name === "ConditionalCheckFailedException") return false;
+        throw err;
+      }
+    },
+
+    async removePrediction(problemId, createdAt) {
+      try {
+        await db.send(
+          new DeleteCommand({
+            TableName: tableName,
+            Key: { PK: `PROBLEM#${problemId}`, SK: `PREDICTION#${createdAt}` },
+            ConditionExpression: "#claimed = :no",
+            ExpressionAttributeNames: { "#claimed": "claimed" },
+            ExpressionAttributeValues: { ":no": false },
+          }),
+        );
+      } catch (err) {
+        if ((err as Error).name !== "ConditionalCheckFailedException") throw err;
+      }
     },
 
     async solved() {

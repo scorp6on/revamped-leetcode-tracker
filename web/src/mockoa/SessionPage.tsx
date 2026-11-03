@@ -1,6 +1,6 @@
 import DOMPurify from "dompurify";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { MAX_PREDICTION_LENGTH } from "../../../api/src/problems/types";
 import type { RunReport, SessionView } from "../../../api/src/mockoa/types";
 import { api } from "../api";
@@ -61,6 +61,22 @@ function Running({ initial, onFinished }: { initial: SessionView; onFinished: (s
   const [running, setRunning] = useState<"run" | "submit" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
+  const navigate = useNavigate();
+
+  // Started by accident: deleted, never counts anywhere (#62).
+  const cancel = async () => {
+    if (!window.confirm("Cancel this test? It's deleted, with your code and approaches, and won't count anywhere.")) return;
+    setFinishing(true);
+    try {
+      const res = await api(`/api/mockoa/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json()).error ?? "Couldn't cancel it.");
+      dropDrafts(id, initial.problems.length);
+      navigate("/mock-oa", { replace: true });
+    } catch (err) {
+      setFinishing(false);
+      setNotice((err as Error).message === "Failed to fetch" ? "Couldn't reach the server. Try again." : (err as Error).message);
+    }
+  };
 
   // The clock, corrected by the server's time so a wrong device clock can't change it.
   const offset = useMemo(() => clockOffset(initial.now, Date.now()), [initial.now]);
@@ -177,6 +193,9 @@ function Running({ initial, onFinished }: { initial: SessionView; onFinished: (s
           <span role="timer" aria-label="Time left" className={cn("ml-auto font-mono text-lg font-medium tabular-nums", left < 5 * 60_000 && "underline decoration-2 underline-offset-4")}>
             {clock(left)}
           </span>
+          <Button variant="ghost" className="h-10 text-muted-foreground" disabled={finishing} onClick={cancel}>
+            Cancel test
+          </Button>
           <Button
             variant="outline"
             className="h-10"

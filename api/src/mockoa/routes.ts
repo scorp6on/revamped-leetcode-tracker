@@ -159,6 +159,7 @@ export const makeMockOaRoutes = ({ store, fetchQuestion, runCode, predictions, n
           ...p,
           code: p.stub,
           approach: null,
+          approachAt: null,
           activeMs: 0,
           submissions: 0,
           submittedCode: null,
@@ -214,7 +215,7 @@ export const makeMockOaRoutes = ({ store, fetchQuestion, runCode, predictions, n
       const p = s.problems[i];
       if (p.approach) return json(409, { error: "Already locked" });
       const createdAt = new Date(now()).toISOString();
-      await store.update(s.id, [[["problems", i, "approach"], text]], true);
+      await store.update(s.id, [[["problems", i, "approach"], text], [["problems", i, "approachAt"], createdAt]], true);
       await predictions.save({ problemId: p.problemId, slug: p.slug, text, createdAt, claimed: false });
       return json(200, { approach: text });
     },
@@ -234,6 +235,19 @@ export const makeMockOaRoutes = ({ store, fetchQuestion, runCode, predictions, n
       const changes: Change[] = submit === true ? submitChanges(i, p, code, report) : [[["problems", i, "code"], code], [["problems", i, "last"], report]];
       if (!(await store.update(s.id, changes, true))) return json(409, { error: "Time's up" });
       return json(200, { report, best: submit === true ? better(p.best, report) : p.best });
+    },
+
+    // Started by accident: the test is deleted and never counts, and so are the approaches locked in
+    // it, so a later normal attempt doesn't claim one as its prediction. Running tests only.
+    async cancel(event: Event): Result {
+      const s = await load(event);
+      if (!s) return json(404, { error: "No such mock OA" });
+      if (s.finishedAt) return json(409, { error: "A finished test can't be canceled" });
+      if (!(await store.remove(s.id))) return json(409, { error: "A finished test can't be canceled" });
+      await Promise.all(
+        s.problems.flatMap((p) => (p.approachAt ? [store.removePrediction(p.problemId, p.approachAt)] : [])),
+      );
+      return json(200, { canceled: true });
     },
 
     // Finish early, or the page's clock hit 0:00. Saves the page's latest code first.

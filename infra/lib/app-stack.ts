@@ -150,6 +150,14 @@ export class AppStack extends cdk.Stack {
         conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["PROBLEM#*", "SYNC", "SUB#*", "BUDGET#*", "LCPROFILE", "MOCKOA#*", "MOCKLIST"] } },
       }),
     );
+    // Canceling a Mock OA deletes it and the predictions it locked; nothing else can be deleted.
+    apiFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["dynamodb:DeleteItem"],
+        resources: [table.tableArn],
+        conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["MOCKOA#*", "PROBLEM#*"] } },
+      }),
+    );
     apiFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["dynamodb:Query"],
@@ -238,6 +246,7 @@ export class AppStack extends cdk.Stack {
     route("/api/mockoa/list", apigw.HttpMethod.PUT, apiFn);
     route("/api/mockoa/{id}", apigw.HttpMethod.GET, apiFn);
     route("/api/mockoa/{id}/finish", apigw.HttpMethod.POST, apiFn);
+    route("/api/mockoa/{id}", apigw.HttpMethod.DELETE, apiFn);
     route("/api/mockoa/{id}/problems/{index}", apigw.HttpMethod.PUT, apiFn);
     route("/api/mockoa/{id}/problems/{index}/approach", apigw.HttpMethod.POST, apiFn);
     route("/api/mockoa/{id}/problems/{index}/run", apigw.HttpMethod.POST, apiFn);

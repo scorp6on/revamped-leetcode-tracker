@@ -63,6 +63,7 @@ export interface SessionProblem {
   tests: TestCase[];
   code: string;
   approach: string | null; // locked before coding; saved as a normal prediction too
+  approachAt?: string | null; // that prediction's time, so Cancel can delete it
   activeMs: number; // time spent with this problem open
   submissions: number;
   submittedCode: string | null; // what the last Submit ran, so time-up only re-runs changed code
@@ -109,7 +110,7 @@ export interface ListEntry {
 }
 
 // What the page gets: before the end, nothing that names the problem.
-export type ProblemView = Omit<SessionProblem, "problemId" | "slug" | "title" | "difficulty" | "tags" | "tests" | "submittedCode" | "spec"> & {
+export type ProblemView = Omit<SessionProblem, "problemId" | "slug" | "title" | "difficulty" | "tags" | "tests" | "submittedCode" | "spec" | "approachAt"> & {
   index: number;
   examples: string[]; // example inputs, shown as "name = value"
   paramNames: string[];
