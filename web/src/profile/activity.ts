@@ -39,7 +39,7 @@ export function streaks(activeDates: Iterable<string>, today: string): Streaks {
 export interface CalendarDay {
   date: string;
   count: number;
-  blank: boolean; // after today, or before your first attempt
+  blank: boolean; // after today; earlier days with no attempts show as empty squares
 }
 
 export interface CalendarWeek {
@@ -49,18 +49,23 @@ export interface CalendarWeek {
 }
 
 // A rolling 12 months ending today, one column per week starting Monday (#60).
-export function calendar(counts: Map<string, number>, today: string, first: string | null): CalendarWeek[] {
+export function calendar(counts: Map<string, number>, today: string): CalendarWeek[] {
   const start = mondayOf(addDays(today, -364));
   const weeks: CalendarWeek[] = [];
   for (let monday = start; monday <= today; monday = addDays(monday, 7)) {
     const days = Array.from({ length: 7 }, (_, i) => {
       const date = addDays(monday, i);
-      return { date, count: counts.get(date) ?? 0, blank: date > today || !first || date < first };
+      return { date, count: counts.get(date) ?? 0, blank: date > today };
     });
     const opens = days.find((d) => d.date.endsWith("-01"));
     const labelDate = opens?.date ?? (weeks.length === 0 ? monday : null);
     weeks.push({ start: monday, month: labelDate && monthName(labelDate), days });
   }
+  // A label needs about 3 columns of room, or it runs into the next one or past the grid.
+  weeks.forEach((w, i) => {
+    const next = weeks.findIndex((x, j) => j > i && x.month);
+    if (w.month && (next === -1 ? weeks.length : next) - i < 3) w.month = null;
+  });
   return weeks;
 }
 

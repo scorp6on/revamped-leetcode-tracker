@@ -79,7 +79,7 @@ export function ProfilePage() {
       if (seen.has(a.problemId)) reviews.add(a);
       seen.add(a.problemId);
     }
-    const yearAgo = calendar(counts, today, s.first);
+    const yearAgo = calendar(counts, today);
     const inYear = yearAgo.flatMap((w) => w.days).reduce((n, d) => n + d.count, 0);
     const tags = [...new Set(list.flatMap((a) => a.tags))];
     return { grouped, s, reviews, weeks: yearAgo, inYear, problems: seen.size, tags };

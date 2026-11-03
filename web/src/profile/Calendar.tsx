@@ -30,7 +30,18 @@ export function Calendar({
   onSelect: (date: string | null) => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
-  const [tip, setTip] = useState<{ text: string; left: number; top: number } | null>(null);
+  const box = useRef<HTMLElement>(null);
+  const [tip, setTip] = useState<{ text: string; left: number; top: number; shift: string } | null>(null);
+  // The tooltip sits outside the scrolling grid, so it's never clipped and never adds a scrollbar.
+  // Near either edge it lines up with the square instead of centring on it.
+  const showTip = (el: HTMLElement, text: string) => {
+    if (!box.current) return;
+    const r = el.getBoundingClientRect();
+    const b = box.current.getBoundingClientRect();
+    const left = r.left - b.left + r.width / 2;
+    const shift = left < 90 ? "-8px" : left > b.width - 90 ? "calc(-100% + 8px)" : "-50%";
+    setTip({ text, left, top: r.top - b.top, shift });
+  };
   // On a narrow screen the grid scrolls; start at the newest week.
   useEffect(() => {
     if (scroller.current) scroller.current.scrollLeft = scroller.current.scrollWidth;
@@ -38,13 +49,13 @@ export function Calendar({
   const day = selected ? attemptsOn(selected) : [];
 
   return (
-    <section className="flex flex-col gap-3 rounded-[10px] border p-5">
+    <section ref={box} className="relative flex flex-col gap-3 rounded-[10px] border p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-base font-semibold">Activity</h2>
         <span className="text-[13px] text-muted-foreground">{plural(total)} in the last year</span>
       </div>
-      <div ref={scroller} className="overflow-x-auto pt-1">
-        <div className="relative ml-auto grid w-max grid-cols-[28px_auto] gap-x-1.5 gap-y-1" onMouseLeave={() => setTip(null)}>
+      <div ref={scroller} className="overflow-x-auto pt-1" onScroll={() => setTip(null)}>
+        <div className="ml-auto grid w-max grid-cols-[28px_auto] gap-x-1.5 gap-y-1" onMouseLeave={() => setTip(null)}>
           <span />
           <div aria-hidden="true" className="flex h-3.5 gap-0.5 text-[11px] leading-none text-muted-foreground">
             {weeks.map((w) => (
@@ -73,14 +84,8 @@ export function Calendar({
                       className={`size-[11px] rounded-[2px] ${SHADES[level(d.count)]} ${
                         d.date === selected ? "outline-2 outline-offset-1 outline-foreground" : ""
                       }`}
-                      onMouseEnter={(e) => {
-                        const el = e.currentTarget;
-                        setTip({ text: `${shortDate(d.date)}: ${plural(d.count)}`, left: el.offsetLeft + 5, top: el.offsetTop });
-                      }}
-                      onFocus={(e) => {
-                        const el = e.currentTarget;
-                        setTip({ text: `${shortDate(d.date)}: ${plural(d.count)}`, left: el.offsetLeft + 5, top: el.offsetTop });
-                      }}
+                      onMouseEnter={(e) => showTip(e.currentTarget, `${shortDate(d.date)}: ${plural(d.count)}`)}
+                      onFocus={(e) => showTip(e.currentTarget, `${shortDate(d.date)}: ${plural(d.count)}`)}
                       onBlur={() => setTip(null)}
                       onClick={() => onSelect(d.date === selected ? null : d.date)}
                     />
@@ -89,15 +94,6 @@ export function Calendar({
               </div>
             ))}
           </div>
-          {tip && (
-            <div
-              role="presentation"
-              className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border bg-background px-2.5 py-1.5 text-xs whitespace-nowrap shadow-md"
-              style={{ left: tip.left, top: tip.top - 6 }}
-            >
-              {tip.text}
-            </div>
-          )}
         </div>
       </div>
       <div aria-hidden="true" className="flex items-center justify-end gap-1 text-[11px] text-muted-foreground">
@@ -138,6 +134,15 @@ export function Calendar({
               </li>
             ))}
           </ul>
+        </div>
+      )}
+      {tip && (
+        <div
+          role="presentation"
+          className="pointer-events-none absolute z-10 rounded-lg border bg-background px-2.5 py-1.5 text-xs whitespace-nowrap shadow-md"
+          style={{ left: tip.left, top: tip.top - 6, translate: `${tip.shift} -100%` }}
+        >
+          {tip.text}
         </div>
       )}
     </section>

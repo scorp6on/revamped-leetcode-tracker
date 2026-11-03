@@ -48,7 +48,7 @@ describe("streaks", () => {
 });
 
 describe("calendar", () => {
-  const weeks = calendar(new Map([["2026-11-03", 2]]), TODAY, "2026-03-02");
+  const weeks = calendar(new Map([["2026-11-03", 2]]), TODAY);
 
   it("covers a rolling year of Monday-first weeks ending this week", () => {
     expect(weeks).toHaveLength(53);
@@ -57,18 +57,20 @@ describe("calendar", () => {
     expect(weeks.every((w) => w.days.length === 7)).toBe(true);
   });
 
-  it("leaves days after today and before your first attempt blank", () => {
+  it("leaves only days after today blank, so the grid is always a full year", () => {
     const last = weeks[52].days;
     expect(last[1]).toEqual({ date: TODAY, count: 2, blank: false });
     expect(last[2].blank).toBe(true); // Wednesday, tomorrow
-    expect(weeks[0].days[0].blank).toBe(true); // before Mar 2
+    expect(weeks[0].days[0]).toEqual({ date: "2025-11-03", count: 0, blank: false }); // an empty square
   });
 
-  it("labels the first column and each week a month starts in", () => {
+  it("labels the first column and each week a month starts in, when there's room", () => {
     expect(weeks[0].month).not.toBeNull();
     const labelled = weeks.filter((w) => w.month).map((w) => w.start);
-    expect(labelled).toContain("2026-10-26"); // Nov 1 is that Sunday
-    expect(labelled).toHaveLength(13);
+    expect(labelled).toContain("2026-09-28"); // Oct 1 is that Thursday
+    // Nov 1 is in the second-to-last column: too little room, so no label sticks out of the grid.
+    expect(labelled).not.toContain("2026-10-26");
+    expect(labelled).toHaveLength(12);
   });
 });
 
