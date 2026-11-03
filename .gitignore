@@ -4,3 +4,4 @@ node_modules/
 dist/
 cdk.out/
 outputs.json
+__pycache__/

@@ -20,12 +20,14 @@ import {
 } from "./review/types";
 import type { ReviewMessage } from "./ai/types";
 import type { Submission } from "./sync/types";
+import type { MockOaStore } from "./mockoa/store";
 
 export interface AttemptDeps {
   reviews: Pick<ReviewStore, "schedule" | "record" | "pendingFor">;
   predictions: Pick<PredictionStore, "latest">;
   queueReview: (m: ReviewMessage) => Promise<void>;
   now: () => number;
+  mockOa?: Pick<MockOaStore, "get" | "update">;
 }
 
 const DIFFICULTIES: Difficulty[] = ["Easy", "Medium", "Hard"];
@@ -85,10 +87,24 @@ const lastCode = (subs: Submission[]) => {
 };
 
 export const makeAttemptHandler =
-  ({ reviews, predictions, queueReview, now }: AttemptDeps) =>
+  ({ reviews, predictions, queueReview, now, mockOa }: AttemptDeps) =>
   async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
-    const input = parseAttempt(readBody(event));
+    const body = readBody(event);
+    const input = parseAttempt(body);
     if (typeof input === "string") return json(400, { error: input });
+
+    // Recorded from a finished mock OA (#62): the AI review reads the code you submitted there.
+    let fromMock: { id: string; index: number; code: string } | undefined;
+    if (body.mockOa !== undefined) {
+      const ref = body.mockOa as { sessionId?: unknown; index?: unknown } | null;
+      if (!mockOa || !ref || typeof ref.sessionId !== "string" || !Number.isInteger(ref.index)) {
+        return json(400, { error: "mockOa must name a session and a problem" });
+      }
+      const s = await mockOa.get(ref.sessionId);
+      const p = s?.finishedAt ? s.problems[ref.index as number] : undefined;
+      if (!s || !p || p.slug !== input.slug) return json(400, { error: "That mock OA problem isn't finished or doesn't match" });
+      fromMock = { id: s.id, index: ref.index as number, code: p.submittedCode ?? p.code };
+    }
 
     const t = now();
     const [current, latest, pending] = await Promise.all([
@@ -118,6 +134,7 @@ export const makeAttemptHandler =
       prediction: claim?.text ?? null,
       reviewQueuedAt: new Date(t).toISOString(),
       ...(waiting.length ? { submissionIds: waiting.map((s) => s.id), code: lastCode(waiting) } : {}),
+      ...(fromMock ? { code: fromMock.code } : {}),
     };
     const failureModes = { ...current?.failureModes };
     if (input.failureMode) failureModes[input.failureMode] = (failureModes[input.failureMode] ?? 0) + 1;
@@ -142,6 +159,11 @@ export const makeAttemptHandler =
         return json(409, { error: "Something changed while saving. Try again." });
       }
       throw err;
+    }
+    if (fromMock) {
+      await mockOa!
+        .update(fromMock.id, [[["problems", fromMock.index, "recorded"], true]])
+        .catch((err) => console.error("couldn't mark the mock OA problem recorded", err));
     }
     // The grade already counts. If this fails, the attempt offers Request review (#58).
     await queueReview({ problemId: input.problemId, createdAt }).catch((err) => console.error("couldn't queue the review", err));

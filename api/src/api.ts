@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda";
 import { SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
@@ -9,6 +10,9 @@ import { json } from "./http";
 import { fetchLeetCodeProfile } from "./lcprofile/leetcode";
 import { makeLcProfileHandler } from "./lcprofile/route";
 import { dynamoLcProfileStore } from "./lcprofile/store";
+import { fetchQuestion } from "./mockoa/leetcode";
+import { makeMockOaRoutes, type RunCode } from "./mockoa/routes";
+import { dynamoMockOaStore } from "./mockoa/store";
 import { makePredictHandler } from "./predict";
 import { makeProblemHandler } from "./problem";
 import { fetchProblem } from "./problems/leetcode";
@@ -47,6 +51,23 @@ const ai = makeAiRoutes({
   capUsd: Number(process.env.BUDGET_CAP ?? 0),
   now: Date.now,
 });
+// The Code runner Lambda (runner/handler.py): no permissions, no network (#62 B).
+const runCode: RunCode = async (job) => {
+  const res = await lambda.send(new InvokeCommand({ FunctionName: process.env.RUNNER_FN, Payload: JSON.stringify(job) }));
+  const body = JSON.parse(new TextDecoder().decode(res.Payload));
+  if (res.FunctionError) throw new Error(`the code runner failed: ${body?.errorMessage ?? res.FunctionError}`);
+  return body;
+};
+const mockOaStore = dynamoMockOaStore(table, process.env.SITE_BUCKET ?? "");
+const mockOa = makeMockOaRoutes({
+  store: mockOaStore,
+  fetchQuestion,
+  runCode,
+  predictions,
+  now: Date.now,
+  random: Math.random,
+  newId: randomUUID,
+});
 const syncStore = dynamoSyncStore(table);
 const sync = makeSyncRoutes({
   store: syncStore,
@@ -63,7 +84,7 @@ export const handler = makeApiHandler({
   "GET /api/me": async () => json(200, { loggedIn: true }),
   "GET /api/problems/{slug}": makeProblemHandler({ fetchProblem, predictions, reviews, now: Date.now }),
   "POST /api/predictions": makePredictHandler({ predictions, now: Date.now }),
-  "POST /api/attempts": makeAttemptHandler({ reviews, predictions, queueReview, now: Date.now }),
+  "POST /api/attempts": makeAttemptHandler({ reviews, predictions, queueReview, now: Date.now, mockOa: mockOaStore }),
   "GET /api/schedule": async () => json(200, await reviews.overview()),
   "GET /api/pending": async () => json(200, { submissions: await reviews.pending() }),
   "POST /api/uploads": uploadHandler,
@@ -81,4 +102,13 @@ export const handler = makeApiHandler({
     now: Date.now,
   }),
   "GET /api/stats": makeStatsHandler(dynamoStatsStore(table, process.env.SITE_BUCKET ?? "")),
+  // Mock OA (#14, #17, #62).
+  "GET /api/mockoa": mockOa.home,
+  "POST /api/mockoa": mockOa.start,
+  "PUT /api/mockoa/list": mockOa.saveList,
+  "GET /api/mockoa/{id}": mockOa.get,
+  "POST /api/mockoa/{id}/finish": mockOa.finish,
+  "PUT /api/mockoa/{id}/problems/{index}": mockOa.save,
+  "POST /api/mockoa/{id}/problems/{index}/approach": mockOa.approach,
+  "POST /api/mockoa/{id}/problems/{index}/run": mockOa.run,
 });

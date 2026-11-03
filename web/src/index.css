@@ -25,6 +25,15 @@
   --hard: #b91c1c;
   --hard-bg: #fef2f2;
   --hard-border: #fecaca;
+  /* Mock OA code colors, like LeetCode's editor (VS Code light): the one exception to color-on-difficulty-only (#62). */
+  --syn-keyword: #af00db;
+  --syn-def: #0000ff;
+  --syn-function: #795e26;
+  --syn-type: #267f99;
+  --syn-number: #098658;
+  --syn-string: #a31515;
+  --syn-comment: #008000;
+  --syn-self: #001080;
 }
 
 .dark {
@@ -46,6 +55,14 @@
   --hard: #f87171;
   --hard-bg: #450a0a;
   --hard-border: #7f1d1d;
+  --syn-keyword: #c586c0;
+  --syn-def: #569cd6;
+  --syn-function: #dcdcaa;
+  --syn-type: #4ec9b0;
+  --syn-number: #b5cea8;
+  --syn-string: #ce9178;
+  --syn-comment: #6a9955;
+  --syn-self: #9cdcfe;
 }
 
 @theme inline {

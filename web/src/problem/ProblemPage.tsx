@@ -1,6 +1,7 @@
 import DOMPurify from "dompurify";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
+import type { MockOaPrefill } from "../mockoa/prefill";
 import { MAX_PREDICTION_LENGTH, type Prediction, type Problem } from "../../../api/src/problems/types";
 import { api } from "../api";
 import { DifficultyBadge } from "../components/DifficultyBadge";
@@ -105,6 +106,9 @@ function ProblemView({
   }, [pending, problem.id]);
   // When your prediction locked: the start of the pre-filled minutes (#57).
   const [predictionAt, setPredictionAt] = useState(prediction?.createdAt ?? null);
+  // Record on the Mock OA results lands here with the form filled in (#62); used once.
+  const navigate = useNavigate();
+  const fromMockOa = (useLocation().state as { mockOa?: MockOaPrefill } | null)?.mockOa;
 
   return (
     <>
@@ -153,9 +157,12 @@ function ProblemView({
             onLocked={() => setPredictionAt(new Date().toISOString())}
           />
           <RecordAttempt
+            key={fromMockOa ? `mock-${fromMockOa.sessionId}` : "form"}
             problem={problem}
             predictionAt={predictionAt}
+            mockOa={fromMockOa}
             onRecorded={(attempt, next) => {
+              if (fromMockOa) navigate(".", { replace: true, state: null });
               setDue(next.due);
               setPanel(({ key }) => ({ key: key + 1, saved: null }));
               setPredictionAt(null);

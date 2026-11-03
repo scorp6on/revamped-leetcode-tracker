@@ -6,6 +6,7 @@ import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as iam from "aws-cdk-lib/aws-iam";
@@ -129,11 +130,12 @@ export class AppStack extends cdk.Stack {
     route("/api/logout", apigw.HttpMethod.POST, logout, true);
 
     // One API Lambda for every app route (#26, #49), so it stays warm across pages.
-    // Waits on LeetCode for problem statements, which can be slow.
-    const apiFn = fn("ApiFn", "api.ts", { timeout: cdk.Duration.seconds(10) });
+    // Waits on LeetCode for problem statements, which can be slow, and on the Code runner for Mock OA
+    // submits. API Gateway gives up at 30 s, so this stays just under it.
+    const apiFn = fn("ApiFn", "api.ts", { timeout: cdk.Duration.seconds(28) });
     // Practice data only: PROBLEM# items, the SYNC record, SUB# submissions, the saved LeetCode
-    // profile (LCPROFILE, #61), and the DUE /
-    // ATTEMPTS / PENDING / AIREVIEWS drawers of GSI1. Never AUTH or HEALTH.
+    // profile (LCPROFILE, #61), Mock OA sessions and your list (MOCKOA#, MOCKLIST), and the DUE /
+    // ATTEMPTS / PENDING / AIREVIEWS / MOCKOAS drawers of GSI1. Never AUTH or HEALTH.
     // A transaction is checked as its parts (Put, Update, ConditionCheck) on each item.
     apiFn.addToRolePolicy(
       new iam.PolicyStatement({
@@ -145,14 +147,14 @@ export class AppStack extends cdk.Stack {
           "dynamodb:ConditionCheckItem",
         ],
         resources: [table.tableArn],
-        conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["PROBLEM#*", "SYNC", "SUB#*", "BUDGET#*", "LCPROFILE"] } },
+        conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["PROBLEM#*", "SYNC", "SUB#*", "BUDGET#*", "LCPROFILE", "MOCKOA#*", "MOCKLIST"] } },
       }),
     );
     apiFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["dynamodb:Query"],
         resources: [`${table.tableArn}/index/GSI1`],
-        conditions: { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["DUE", "ATTEMPTS", "PENDING", "AIREVIEWS"] } },
+        conditions: { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["DUE", "ATTEMPTS", "PENDING", "AIREVIEWS", "MOCKOAS"] } },
       }),
     );
 
@@ -174,6 +176,27 @@ export class AppStack extends cdk.Stack {
     // Sync now starts the backup poll.
     backupFn.grantInvoke(apiFn);
     apiFn.addEnvironment("BACKUP_FN", backupFn.functionName);
+
+    // Code runner for Mock OA (#17, #62 B). It runs code nobody checked, so it gets nothing: no AWS
+    // permissions beyond its own logs, and no network, in a private network with no route out (no NAT,
+    // no internet gateway; free). The code runs in a child process with memory and time caps.
+    const runnerVpc = new ec2.Vpc(this, "RunnerVpc", {
+      maxAzs: 2,
+      natGateways: 0,
+      subnetConfiguration: [{ name: "isolated", subnetType: ec2.SubnetType.PRIVATE_ISOLATED }],
+    });
+    const runnerFn = new lambda.Function(this, "RunnerFn", {
+      runtime: lambda.Runtime.PYTHON_3_13,
+      handler: "handler.lambda_handler",
+      code: lambda.Code.fromAsset(path.join(repoRoot, "runner"), { exclude: ["test_*.py", "__pycache__"] }),
+      memorySize: 1024, // more memory is also more CPU, so timings are steadier
+      timeout: cdk.Duration.seconds(25),
+      vpc: runnerVpc,
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+      allowAllOutbound: false,
+    });
+    runnerFn.grantInvoke(apiFn);
+    apiFn.addEnvironment("RUNNER_FN", runnerFn.functionName);
     // Scheduled sync is prod only (#36).
     if (props.stage === "prod") {
       new events.Rule(this, "BackupPoll", {
@@ -210,6 +233,14 @@ export class AppStack extends cdk.Stack {
     route("/api/stats", apigw.HttpMethod.GET, apiFn);
     route("/api/history", apigw.HttpMethod.GET, apiFn);
     route("/api/leetcode-profile", apigw.HttpMethod.GET, apiFn);
+    route("/api/mockoa", apigw.HttpMethod.GET, apiFn);
+    route("/api/mockoa", apigw.HttpMethod.POST, apiFn);
+    route("/api/mockoa/list", apigw.HttpMethod.PUT, apiFn);
+    route("/api/mockoa/{id}", apigw.HttpMethod.GET, apiFn);
+    route("/api/mockoa/{id}/finish", apigw.HttpMethod.POST, apiFn);
+    route("/api/mockoa/{id}/problems/{index}", apigw.HttpMethod.PUT, apiFn);
+    route("/api/mockoa/{id}/problems/{index}/approach", apigw.HttpMethod.POST, apiFn);
+    route("/api/mockoa/{id}/problems/{index}/run", apigw.HttpMethod.POST, apiFn);
 
     // Public: the extension has no login cookie, so the Ingest Lambda checks its token.
     route("/api/ext/sync", apigw.HttpMethod.POST, ingestFn, true);

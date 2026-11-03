@@ -8,6 +8,7 @@ import type { ReviewStore } from "./review/store";
 import type { ReviewMessage } from "./ai/types";
 import type { Schedule } from "./review/types";
 import type { Submission } from "./sync/types";
+import type { Session } from "./mockoa/types";
 
 const NOW = Date.parse("2026-10-28T20:00:00Z");
 
@@ -216,5 +217,41 @@ describe("API router", () => {
     const call = (routeKey: string) => handler({ routeKey } as APIGatewayProxyEventV2) as Promise<{ statusCode: number }>;
     expect((await call("GET /api/me")).statusCode).toBe(200);
     expect((await call("GET /api/nope")).statusCode).toBe(404);
+  });
+});
+
+describe("POST /api/attempts from a mock OA (#62)", () => {
+  const session = (finished: boolean) =>
+    ({
+      id: "s1",
+      finishedAt: finished ? "2026-10-28T19:30:00.000Z" : null,
+      problems: [{ slug: "two-sum", code: "draft", submittedCode: "class Solution: ..." }],
+    }) as unknown as Session;
+
+  const setupMock = (s: Session) => {
+    const recorded: Parameters<ReviewStore["record"]>[0][] = [];
+    const updates: unknown[] = [];
+    const handler = makeAttemptHandler({
+      reviews: { schedule: async () => undefined, pendingFor: async () => [], record: async (c) => void recorded.push(c) },
+      predictions: { latest: async () => undefined },
+      queueReview: async () => {},
+      now: () => NOW,
+      mockOa: { get: async () => s, update: async (_id, changes) => (updates.push(changes), true) },
+    });
+    const post = async (body: unknown) =>
+      (await handler({ body: JSON.stringify(body) } as APIGatewayProxyEventV2)) as { statusCode: number };
+    return { post, recorded, updates };
+  };
+
+  it("takes the code you submitted there and marks the problem recorded", async () => {
+    const { post, recorded, updates } = setupMock(session(true));
+    expect((await post({ ...valid, mockOa: { sessionId: "s1", index: 0 } })).statusCode).toBe(201);
+    expect(recorded[0].attempt.code).toBe("class Solution: ...");
+    expect(updates).toEqual([[[["problems", 0, "recorded"], true]]]);
+  });
+
+  it("refuses a test that isn't finished, or a problem that doesn't match", async () => {
+    expect((await setupMock(session(false)).post({ ...valid, mockOa: { sessionId: "s1", index: 0 } })).statusCode).toBe(400);
+    expect((await setupMock(session(true)).post({ ...valid, slug: "three-sum", mockOa: { sessionId: "s1", index: 0 } })).statusCode).toBe(400);
   });
 });

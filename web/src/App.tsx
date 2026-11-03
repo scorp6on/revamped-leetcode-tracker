@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Route, Routes } from "react-router";
 import { api, setUnauthorizedHandler } from "./api";
 import { AppHeader } from "./components/AppHeader";
@@ -11,6 +11,11 @@ import { ProfilePage } from "./profile/ProfilePage";
 import { ScrollMemory } from "./ScrollMemory";
 import { StatsPage } from "./stats/StatsPage";
 import { useTheme } from "./theme";
+
+// The code editor is big, so Mock OA loads only when you open it.
+const SetupPage = lazy(() => import("./mockoa/SetupPage").then((m) => ({ default: m.SetupPage })));
+const SessionPage = lazy(() => import("./mockoa/SessionPage").then((m) => ({ default: m.SessionPage })));
+const loading = <p className="mx-auto w-full max-w-[1120px] px-6 py-10 text-muted-foreground">Loading…</p>;
 
 type Session = "checking" | "in" | "out";
 
@@ -48,6 +53,8 @@ export function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/problems/:slug" element={<ProblemPage />} />
+            <Route path="/mock-oa" element={<Suspense fallback={loading}><SetupPage /></Suspense>} />
+            <Route path="/mock-oa/:id" element={<Suspense fallback={loading}><SessionPage /></Suspense>} />
             <Route path="/stats" element={<StatsPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route

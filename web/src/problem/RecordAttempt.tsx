@@ -14,6 +14,7 @@ import { api } from "../api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import type { MockOaPrefill } from "../mockoa/prefill";
 import { NoteEditor } from "../notes/NoteEditor";
 import { prefillMinutes } from "../pending/group";
 import { usePending } from "../pending/PendingContext";
@@ -28,25 +29,27 @@ const fieldClass =
 export function RecordAttempt({
   problem,
   predictionAt,
+  mockOa,
   onRecorded,
 }: {
   problem: Problem;
   predictionAt: string | null;
+  mockOa?: MockOaPrefill; // filled in from a finished mock OA (#62)
   onRecorded: (attempt: Attempt, schedule: Schedule) => void;
 }) {
   const { groups, refresh } = usePending();
   const waiting = groups.find((g) => g.slug === problem.slug)?.submissions ?? [];
   const lastWaiting = waiting[waiting.length - 1];
-  const [outcome, setOutcome] = useState<Outcome>();
+  const [outcome, setOutcome] = useState<Outcome | undefined>(mockOa?.outcome);
   const [confidence, setConfidence] = useState<number>();
-  const [minutes, setMinutes] = useState("");
-  const [minutesEdited, setMinutesEdited] = useState(false);
+  const [minutes, setMinutes] = useState(mockOa ? String(mockOa.minutes) : "");
+  const [minutesEdited, setMinutesEdited] = useState(!!mockOa);
   const prefilled = prefillMinutes(predictionAt, waiting);
   // A starting point you can change (#57); never overwrites what you typed.
   useEffect(() => {
     if (!minutesEdited) setMinutes(prefilled === null ? "" : String(prefilled));
   }, [prefilled, minutesEdited]);
-  const [failureMode, setFailureMode] = useState<FailureMode | "">("");
+  const [failureMode, setFailureMode] = useState<FailureMode | "">(mockOa?.failureMode ?? "");
   // The three note sections (#51).
   const [approach, setApproach] = useState("");
   const [learned, setLearned] = useState("");
@@ -89,6 +92,7 @@ export function RecordAttempt({
           reflection,
           // Synced attempts count from the day you solved, not the day you grade (#57).
           localDate: localToday(lastWaiting ? new Date(lastWaiting.timestamp * 1000) : undefined),
+          ...(mockOa && { mockOa: { sessionId: mockOa.sessionId, index: mockOa.index } }),
         }),
       });
       const body = await res.json();
@@ -118,6 +122,7 @@ export function RecordAttempt({
           {waiting.length ? "Grade this attempt" : "Record attempt"}
         </h2>
         {waiting.length > 1 && <span className="text-[13px] text-muted-foreground">{waiting.length} submissions become one grade</span>}
+        {mockOa && <span className="text-[13px] text-muted-foreground">Filled in from your {mockOa.summary}. Change anything.</span>}
       </div>
 
       {waiting.length > 0 && (

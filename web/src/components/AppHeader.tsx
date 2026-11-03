@@ -19,9 +19,9 @@ const SunIcon = () => (
   </svg>
 );
 
-// Mock OA joins when it's built.
 const LINKS = [
   { to: "/", label: "Home" },
+  { to: "/mock-oa", label: "Mock OA" },
   { to: "/stats", label: "Stats" },
   { to: "/profile", label: "Profile" },
 ];
@@ -50,7 +50,7 @@ export function AppHeader({
               <NavLink
                 key={l.to}
                 to={l.to}
-                end
+                end={l.to === "/"} // Mock OA stays marked during a test (/mock-oa/…)
                 className={({ isActive }) =>
                   cn("py-2", isActive ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground")
                 }

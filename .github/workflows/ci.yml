@@ -20,6 +20,7 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - run: python3 -m unittest discover runner # the Mock OA code runner
       - run: npm run build -w web
 
       - uses: aws-actions/configure-aws-credentials@v4
