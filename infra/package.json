@@ -5,14 +5,17 @@
     "typecheck": "tsc -p .",
     "cdk": "cdk",
     "set-password": "tsx scripts/set-password.ts",
-    "set-anthropic-key": "tsx scripts/set-anthropic-key.ts"
+    "set-anthropic-key": "tsx scripts/set-anthropic-key.ts",
+    "backfill-review-drawer": "tsx scripts/backfill-review-drawer.ts"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.170.0",
     "constructs": "^10.4.0"
   },
   "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1158.0",
     "@aws-sdk/client-ssm": "^3.1158.0",
+    "@aws-sdk/lib-dynamodb": "^3.1158.0",
     "@types/node": "^20.17.0",
     "aws-cdk": "^2.1000.0",
     "esbuild": "^0.28.2",

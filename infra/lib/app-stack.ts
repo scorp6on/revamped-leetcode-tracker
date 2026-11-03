@@ -132,7 +132,7 @@ export class AppStack extends cdk.Stack {
     // Waits on LeetCode for problem statements, which can be slow.
     const apiFn = fn("ApiFn", "api.ts", { timeout: cdk.Duration.seconds(10) });
     // Practice data only: PROBLEM# items, the SYNC record and SUB# submissions, and the DUE /
-    // ATTEMPTS / PENDING drawers of GSI1. Never AUTH or HEALTH.
+    // ATTEMPTS / PENDING / AIREVIEWS drawers of GSI1. Never AUTH or HEALTH.
     // A transaction is checked as its parts (Put, Update, ConditionCheck) on each item.
     apiFn.addToRolePolicy(
       new iam.PolicyStatement({
@@ -151,7 +151,7 @@ export class AppStack extends cdk.Stack {
       new iam.PolicyStatement({
         actions: ["dynamodb:Query"],
         resources: [`${table.tableArn}/index/GSI1`],
-        conditions: { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["DUE", "ATTEMPTS", "PENDING"] } },
+        conditions: { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["DUE", "ATTEMPTS", "PENDING", "AIREVIEWS"] } },
       }),
     );
 
@@ -206,6 +206,7 @@ export class AppStack extends cdk.Stack {
     route("/api/reviews", apigw.HttpMethod.POST, apiFn);
     route("/api/reviews", apigw.HttpMethod.GET, apiFn);
     route("/api/budget", apigw.HttpMethod.GET, apiFn);
+    route("/api/stats", apigw.HttpMethod.GET, apiFn);
 
     // Public: the extension has no login cookie, so the Ingest Lambda checks its token.
     route("/api/ext/sync", apigw.HttpMethod.POST, ingestFn, true);
@@ -233,6 +234,8 @@ export class AppStack extends cdk.Stack {
     // The API Lambda signs those uploads, so it needs PutObject, but only on img/*.
     apiFn.addEnvironment("SITE_BUCKET", site.bucketName);
     site.grantPut(apiFn, "img/*");
+    // Stats reads the catalog for topic names and sizes (#59).
+    site.grantRead(apiFn, "data/catalog.json");
 
     // One domain for the app and the API: /api/* goes to API Gateway, everything else to S3.
     const apiDomain = cdk.Fn.select(2, cdk.Fn.split("/", api.apiEndpoint));

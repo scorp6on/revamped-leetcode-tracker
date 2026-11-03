@@ -11,7 +11,8 @@ import type { AiReview } from "../ai/types";
 import type { Submission } from "../sync/types";
 import type { Attempt, RecentFailure, Schedule, ScheduleResponse } from "./types";
 
-// GSI1 is one overloaded index with two "drawers": ATTEMPTS (by time) and DUE (by due date).
+// GSI1 is one overloaded index with "drawers": ATTEMPTS (by time), DUE (by due date), PENDING
+// (synced submissions waiting to be graded) and AIREVIEWS (by review time).
 export const INDEX = "GSI1";
 const RECENT_ATTEMPTS = 50;
 

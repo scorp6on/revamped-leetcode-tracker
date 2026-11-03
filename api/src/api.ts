@@ -11,6 +11,8 @@ import { makeProblemHandler } from "./problem";
 import { fetchProblem } from "./problems/leetcode";
 import { dynamoPredictionStore } from "./problems/prediction";
 import { dynamoReviewStore } from "./review/store";
+import { makeStatsHandler } from "./stats/route";
+import { dynamoStatsStore } from "./stats/store";
 import { makeSyncRoutes } from "./sync/routes";
 import { dynamoSyncStore } from "./sync/store";
 import { newToken } from "./sync/token";
@@ -67,4 +69,5 @@ export const handler = makeApiHandler({
   "POST /api/reviews": ai.request,
   "GET /api/reviews": ai.list,
   "GET /api/budget": ai.budget,
+  "GET /api/stats": makeStatsHandler(dynamoStatsStore(table, process.env.SITE_BUCKET ?? "")),
 });

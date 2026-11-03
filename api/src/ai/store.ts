@@ -33,7 +33,14 @@ export const dynamoAiStore = (tableName: string): AiStore => {
         .send(
           new PutCommand({
             TableName: tableName,
-            Item: { PK: `PROBLEM#${problemId}`, SK: `AIREVIEW#${review.attemptCreatedAt}`, ...review },
+            // Also filed in the AIREVIEWS drawer of GSI1, so Stats finds every grade in one query (#59).
+            Item: {
+              PK: `PROBLEM#${problemId}`,
+              SK: `AIREVIEW#${review.attemptCreatedAt}`,
+              GSI1PK: "AIREVIEWS",
+              GSI1SK: review.createdAt,
+              ...review,
+            },
             // A finished review is never overwritten; a failed or skipped one can be.
             ConditionExpression: "attribute_not_exists(PK) OR #status <> :done",
             ExpressionAttributeNames: { "#status": "status" },

@@ -2,7 +2,10 @@
 // daylight-saving arithmetic: the math happens on a UTC calendar, where every day is 24 hours.
 
 export const isLocalDate = (s: unknown): s is string =>
-  typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(`${s}T00:00:00Z`).toISOString().startsWith(s);
+  typeof s === "string" &&
+  /^\d{4}-\d{2}-\d{2}$/.test(s) &&
+  !Number.isNaN(Date.parse(`${s}T00:00:00Z`)) && // "2026-13-01" is NaN, which toISOString would throw on
+  new Date(`${s}T00:00:00Z`).toISOString().startsWith(s);
 
 export const addDays = (date: string, days: number): string => {
   const d = new Date(`${date}T00:00:00Z`);

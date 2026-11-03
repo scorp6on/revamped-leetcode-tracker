@@ -17,8 +17,11 @@ const SunIcon = () => (
   </svg>
 );
 
-// Mock OA, Stats and Profile join as each page is built.
-const LINKS = [{ to: "/", label: "Home" }];
+// Mock OA and Profile join as each page is built.
+const LINKS = [
+  { to: "/", label: "Home" },
+  { to: "/stats", label: "Stats" },
+];
 
 export function AppHeader({
   theme,
