@@ -69,5 +69,6 @@ export const handler = makeApiHandler({
   "POST /api/reviews": ai.request,
   "GET /api/reviews": ai.list,
   "GET /api/budget": ai.budget,
+  "GET /api/history": async () => json(200, { attempts: await reviews.history() }),
   "GET /api/stats": makeStatsHandler(dynamoStatsStore(table, process.env.SITE_BUCKET ?? "")),
 });

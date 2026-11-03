@@ -2,6 +2,7 @@ import type { AiReview } from "../../../api/src/ai/types";
 import { FAILURE_MODES, NOTE_SECTIONS, type Attempt, type NoteSection } from "../../../api/src/review/types";
 import { Markdown } from "../notes/Markdown";
 import { AiReviewView } from "./AiReviewView";
+import { Timeline } from "./Timeline";
 
 const OUTCOME_LABEL = { solved: "Solved", struggled: "Struggled", failed: "Failed" } as const;
 
@@ -16,10 +17,12 @@ const summary = (a: Attempt) =>
 // Your attempts on this problem, newest first (#53): an early slice of the Profile timeline (M10).
 export function PastAttempts({
   attempts,
+  due,
   aiReviews,
   onReviewRequested,
 }: {
   attempts: Attempt[];
+  due: string | null; // the next review, for the timeline (#60)
   aiReviews: AiReview[];
   onReviewRequested: (attempt: Attempt) => void;
 }) {
@@ -33,6 +36,9 @@ export function PastAttempts({
         Past attempts
         <span className="font-mono text-[13px] font-normal text-muted-foreground">{attempts.length}</span>
       </summary>
+      <div className="border-t">
+        <Timeline attempts={attempts} due={due} />
+      </div>
       <div className="divide-y border-t">
         {attempts.map((a, i) => (
           // The newest starts open; the rest show their summary line until opened.

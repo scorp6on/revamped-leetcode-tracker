@@ -17,10 +17,11 @@ const SunIcon = () => (
   </svg>
 );
 
-// Mock OA and Profile join as each page is built.
+// Mock OA joins when it's built.
 const LINKS = [
   { to: "/", label: "Home" },
   { to: "/stats", label: "Stats" },
+  { to: "/profile", label: "Profile" },
 ];
 
 export function AppHeader({

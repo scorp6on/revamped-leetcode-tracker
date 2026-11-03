@@ -7,6 +7,7 @@ import { Login } from "./Login";
 import { Notification } from "./pending/Notification";
 import { PendingProvider } from "./pending/PendingContext";
 import { ProblemPage } from "./problem/ProblemPage";
+import { ProfilePage } from "./profile/ProfilePage";
 import { ScrollMemory } from "./ScrollMemory";
 import { StatsPage } from "./stats/StatsPage";
 import { useTheme } from "./theme";
@@ -48,6 +49,7 @@ export function App() {
             <Route path="/" element={<Home />} />
             <Route path="/problems/:slug" element={<ProblemPage />} />
             <Route path="/stats" element={<StatsPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
             <Route
               path="*"
               element={<p className="mx-auto w-full max-w-[1120px] px-6 py-10 text-muted-foreground">Page not found.</p>}

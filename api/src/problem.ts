@@ -8,7 +8,7 @@ import type { ReviewStore } from "./review/store";
 export interface ProblemDeps {
   fetchProblem: (slug: string) => Promise<Problem | null>;
   predictions: Pick<PredictionStore, "latest">;
-  reviews: Pick<ReviewStore, "attempts" | "aiReviews" | "pendingFor">;
+  reviews: Pick<ReviewStore, "attempts" | "aiReviews" | "pendingFor" | "schedule">;
   now: () => number;
 }
 
@@ -28,16 +28,23 @@ export const makeProblemHandler =
     if (!problem) return json(404, { error: "Problem not found" });
 
     // No Premium account (#44): Premium problems get no statement and no prediction box.
-    if (problem.paid) return json(200, { problem: { ...problem, content: null }, prediction: null, attempts: [], aiReviews: [] });
+    if (problem.paid) return json(200, { problem: { ...problem, content: null }, prediction: null, attempts: [], aiReviews: [], schedule: null });
 
     // The ID comes from LeetCode's answer, so these reads have to wait for it.
-    const [latest, attempts, waiting, aiReviews] = await Promise.all([
+    const [latest, attempts, waiting, aiReviews, schedule] = await Promise.all([
       deps.predictions.latest(problem.id),
       deps.reviews.attempts(problem.id), // feeds Past attempts (#53)
       deps.reviews.pendingFor(slug),
       deps.reviews.aiReviews(problem.id),
+      deps.reviews.schedule(problem.id), // the next review, for the timeline (#60)
     ]);
     // With submissions waiting, the window runs from the first one, so a late grade keeps it (#57).
     const since = waiting.length ? waiting[0].timestamp * 1000 : deps.now();
-    return json(200, { problem, prediction: latest && isActive(latest, since) ? latest : null, attempts, aiReviews });
+    return json(200, {
+      problem,
+      prediction: latest && isActive(latest, since) ? latest : null,
+      attempts,
+      aiReviews,
+      schedule: schedule ?? null,
+    });
   };

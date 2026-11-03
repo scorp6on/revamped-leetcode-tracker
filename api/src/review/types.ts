@@ -56,6 +56,13 @@ export interface Attempt extends AttemptInput {
   reviewQueuedAt?: string; // when the AI review was queued (#58)
 }
 
+// What Profile gets for each attempt (#60): notes and problem facts, never code or sync fields.
+export const HISTORY_FIELDS = [
+  "problemId", "slug", "title", "difficulty", "tags", "outcome", "confidence", "minutes", "failureMode",
+  "approach", "learned", "reflection", "notes", "localDate", "createdAt",
+] as const;
+export type HistoryAttempt = Pick<Attempt, Exclude<(typeof HISTORY_FIELDS)[number], "notes">> & { notes?: string };
+
 export interface ReviewState {
   ease: number;
   intervalDays: number;

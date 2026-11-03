@@ -32,7 +32,7 @@ export function RecordAttempt({
 }: {
   problem: Problem;
   predictionAt: string | null;
-  onRecorded: (attempt: Attempt) => void;
+  onRecorded: (attempt: Attempt, schedule: Schedule) => void;
 }) {
   const { groups, refresh } = usePending();
   const waiting = groups.find((g) => g.slug === problem.slug)?.submissions ?? [];
@@ -102,7 +102,7 @@ export function RecordAttempt({
       setApproach("");
       setLearned("");
       setReflection("");
-      onRecorded(body.attempt as Attempt);
+      onRecorded(body.attempt as Attempt, body.schedule as Schedule);
       void refresh();
     } catch {
       setResult({ ok: false, error: "Couldn't reach the server. Try again." });

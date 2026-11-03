@@ -9,7 +9,7 @@ import {
 import type { Prediction } from "../problems/types";
 import type { AiReview } from "../ai/types";
 import type { Submission } from "../sync/types";
-import type { Attempt, RecentFailure, Schedule, ScheduleResponse } from "./types";
+import { HISTORY_FIELDS, type Attempt, type HistoryAttempt, type RecentFailure, type Schedule, type ScheduleResponse } from "./types";
 
 // GSI1 is one overloaded index with "drawers": ATTEMPTS (by time), DUE (by due date), PENDING
 // (synced submissions waiting to be graded) and AIREVIEWS (by review time).
@@ -26,6 +26,7 @@ export interface ReviewStore {
   // Every write lands together or not at all.
   record(change: { attempt: Attempt; schedule: Schedule; claim?: Prediction; submissionIds?: string[] }): Promise<void>;
   overview(): Promise<ScheduleResponse>;
+  history(): Promise<HistoryAttempt[]>; // every attempt, newest first (#60)
 }
 
 // Drop the key attributes, so callers only see the shape in types.ts.
@@ -158,6 +159,20 @@ export const dynamoReviewStore = (tableName: string): ReviewStore => {
         schedules: schedules.map((s) => strip<Schedule>(s)),
         recentFailures: (recent.Items ?? []).filter((a) => a.failureMode) as RecentFailure[],
       };
+    },
+
+    async history() {
+      const items = await queryAll({
+        TableName: tableName,
+        IndexName: INDEX,
+        KeyConditionExpression: "GSI1PK = :attempts",
+        ExpressionAttributeValues: { ":attempts": "ATTEMPTS" },
+        // Every field through a #name, since some (like "minutes") are reserved words.
+        ProjectionExpression: HISTORY_FIELDS.map((f) => `#${f}`).join(", "),
+        ExpressionAttributeNames: Object.fromEntries(HISTORY_FIELDS.map((f) => [`#${f}`, f])),
+        ScanIndexForward: false, // newest first
+      });
+      return items as unknown as HistoryAttempt[];
     },
   };
 };

@@ -7,12 +7,16 @@ import { DifficultyBadge } from "../components/DifficultyBadge";
 import { Button, buttonVariants } from "../components/ui/button";
 import { Label } from "../components/ui/label";
 import type { AiReview } from "../../../api/src/ai/types";
-import type { Attempt } from "../../../api/src/review/types";
+import type { Attempt, Schedule } from "../../../api/src/review/types";
 import { isReviewPending } from "./AiReviewView";
 import { PastAttempts } from "./PastAttempts";
 import { RecordAttempt } from "./RecordAttempt";
 
-type Load = "loading" | "not-found" | "error" | { problem: Problem; prediction: Prediction | null; attempts: Attempt[]; aiReviews: AiReview[] };
+type Load =
+  | "loading"
+  | "not-found"
+  | "error"
+  | { problem: Problem; prediction: Prediction | null; attempts: Attempt[]; aiReviews: AiReview[]; schedule: Schedule | null };
 // A prediction is locked as soon as you open LeetCode; the save runs alongside the new tab.
 type Locked = { text: string; status: "saving" | "saved" | "failed" };
 
@@ -66,11 +70,13 @@ function ProblemView({
   prediction,
   attempts: loaded,
   aiReviews: loadedReviews,
+  schedule,
 }: {
   problem: Problem;
   prediction: Prediction | null;
   attempts: Attempt[];
   aiReviews: AiReview[];
+  schedule: Schedule | null;
 }) {
   const statement = useMemo(
     // LeetCode's HTML goes into our page, so anything executable is stripped first (#45).
@@ -83,6 +89,7 @@ function ProblemView({
   const [panel, setPanel] = useState({ key: 0, saved: prediction });
   const [attempts, setAttempts] = useState(loaded);
   const [aiReviews, setAiReviews] = useState(loadedReviews);
+  const [due, setDue] = useState(schedule?.due ?? null);
   // While a review is on its way, check for it every 10 s (#24, #58).
   const pending = attempts.some((a) => isReviewPending(a, aiReviews.find((r) => r.attemptCreatedAt === a.createdAt)));
   useEffect(() => {
@@ -148,7 +155,8 @@ function ProblemView({
           <RecordAttempt
             problem={problem}
             predictionAt={predictionAt}
-            onRecorded={(attempt) => {
+            onRecorded={(attempt, next) => {
+              setDue(next.due);
               setPanel(({ key }) => ({ key: key + 1, saved: null }));
               setPredictionAt(null);
               setAttempts((list) => [attempt, ...list]);
@@ -156,6 +164,7 @@ function ProblemView({
           />
           <PastAttempts
             attempts={attempts}
+            due={due}
             aiReviews={aiReviews}
             onReviewRequested={(a) => {
               // Clear any old status and show "Reviewing…" until the new one lands.

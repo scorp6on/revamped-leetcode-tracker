@@ -207,6 +207,7 @@ export class AppStack extends cdk.Stack {
     route("/api/reviews", apigw.HttpMethod.GET, apiFn);
     route("/api/budget", apigw.HttpMethod.GET, apiFn);
     route("/api/stats", apigw.HttpMethod.GET, apiFn);
+    route("/api/history", apigw.HttpMethod.GET, apiFn);
 
     // Public: the extension has no login cookie, so the Ingest Lambda checks its token.
     route("/api/ext/sync", apigw.HttpMethod.POST, ingestFn, true);

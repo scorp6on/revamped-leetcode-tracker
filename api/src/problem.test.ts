@@ -2,7 +2,7 @@ import type { APIGatewayProxyEventV2 } from "aws-lambda";
 import { describe, expect, it } from "vitest";
 import { makeProblemHandler } from "./problem";
 import type { Prediction, Problem } from "./problems/types";
-import type { Attempt } from "./review/types";
+import type { Attempt, Schedule } from "./review/types";
 import type { Submission } from "./sync/types";
 import { PREDICTION_WINDOW_MS } from "./problems/prediction";
 
@@ -31,6 +31,7 @@ const setup = ({
   latest = undefined as Prediction | undefined,
   attempts = [] as Attempt[],
   waiting = [] as Submission[],
+  schedule = undefined as Schedule | undefined,
 } = {}) => {
   const handler = makeProblemHandler({
     fetchProblem: async () => {
@@ -38,7 +39,12 @@ const setup = ({
       return problem;
     },
     predictions: { latest: async () => latest },
-    reviews: { attempts: async () => attempts, pendingFor: async () => waiting, aiReviews: async () => [] },
+    reviews: {
+      attempts: async () => attempts,
+      pendingFor: async () => waiting,
+      aiReviews: async () => [],
+      schedule: async () => schedule,
+    },
     now: () => NOW,
   });
   return async (slug: string) => {
@@ -87,6 +93,12 @@ describe("GET /api/problems/{slug}", () => {
     const attempts = [{ createdAt: "2026-10-28T10:00:00.000Z" }, { createdAt: "2026-10-27T10:00:00.000Z" }] as Attempt[];
     expect((await setup({ attempts })("two-sum")).body.attempts).toEqual(attempts);
     expect((await setup({ attempts, problem: { ...twoSum, paid: true } })("two-sum")).body.attempts).toEqual([]);
+  });
+
+  it("includes the schedule for the timeline, or null before any attempt", async () => {
+    const schedule = { problemId: "1", due: "2026-11-18" } as Schedule;
+    expect((await setup({ schedule })("two-sum")).body.schedule).toEqual(schedule);
+    expect((await setup()("two-sum")).body.schedule).toBeNull();
   });
 
   it("keeps a prediction for a late grade: the window runs from the first waiting submission", async () => {
