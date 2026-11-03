@@ -313,7 +313,7 @@ export function SetupPage() {
                 ? source === "list"
                   ? `Add ${count - usable} more to your list, or ask for fewer.`
                   : "Not enough problems match these filters."
-                : "Problems are judged on their own examples for now; AI-written tests come next."}
+                : "New problems get AI-written tests first: about 20 s each, under 1¢."}
             </span>
           </div>
           {error && (

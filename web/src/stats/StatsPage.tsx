@@ -71,7 +71,7 @@ export function StatsPage() {
             <Retention s={s} />
             <FailureTrend s={s} />
             <Gaps s={s} />
-            <MockOa />
+            <MockOa s={s} />
           </div>
         </>
       )}

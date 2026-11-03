@@ -4,14 +4,15 @@ import { SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
 import { makeAiRoutes } from "./ai/routes";
 import { dynamoAiStore } from "./ai/store";
-import type { ReviewMessage } from "./ai/types";
+import { monthOf, type ReviewMessage } from "./ai/types";
 import { makeAttemptHandler } from "./attempt";
 import { json } from "./http";
 import { fetchLeetCodeProfile } from "./lcprofile/leetcode";
 import { makeLcProfileHandler } from "./lcprofile/route";
 import { dynamoLcProfileStore } from "./lcprofile/store";
 import { fetchQuestion } from "./mockoa/leetcode";
-import { makeMockOaRoutes, type RunCode } from "./mockoa/routes";
+import { makeMockOaRoutes } from "./mockoa/routes";
+import { lambdaRunCode } from "./mockoa/runner";
 import { dynamoMockOaStore } from "./mockoa/store";
 import { makePredictHandler } from "./predict";
 import { makeProblemHandler } from "./problem";
@@ -44,26 +45,26 @@ const sqs = new SQSClient({});
 const queueReview = async (message: ReviewMessage) => {
   await sqs.send(new SendMessageCommand({ QueueUrl: process.env.REVIEW_QUEUE_URL, MessageBody: JSON.stringify(message) }));
 };
+const aiStore = dynamoAiStore(table);
 const ai = makeAiRoutes({
-  store: dynamoAiStore(table),
+  store: aiStore,
   reviews,
   enqueue: queueReview,
   capUsd: Number(process.env.BUDGET_CAP ?? 0),
   now: Date.now,
 });
-// The Code runner Lambda (runner/handler.py): no permissions, no network (#62 B).
-const runCode: RunCode = async (job) => {
-  const res = await lambda.send(new InvokeCommand({ FunctionName: process.env.RUNNER_FN, Payload: JSON.stringify(job) }));
-  const body = JSON.parse(new TextDecoder().decode(res.Payload));
-  if (res.FunctionError) throw new Error(`the code runner failed: ${body?.errorMessage ?? res.FunctionError}`);
-  return body;
-};
+const runCode = lambdaRunCode(lambda, process.env.RUNNER_FN);
 const mockOaStore = dynamoMockOaStore(table, process.env.SITE_BUCKET ?? "");
 const mockOa = makeMockOaRoutes({
   store: mockOaStore,
   fetchQuestion,
   runCode,
   predictions,
+  // The Test writer queue (#63): one message per problem that needs tests.
+  enqueueTests: async (m) => {
+    await sqs.send(new SendMessageCommand({ QueueUrl: process.env.TEST_QUEUE_URL, MessageBody: JSON.stringify(m) }));
+  },
+  budgetLeft: async () => (await aiStore.spent(monthOf(Date.now()))) < Number(process.env.BUDGET_CAP ?? 0),
   now: Date.now,
   random: Math.random,
   newId: randomUUID,
@@ -112,4 +113,8 @@ export const handler = makeApiHandler({
   "PUT /api/mockoa/{id}/problems/{index}": mockOa.save,
   "POST /api/mockoa/{id}/problems/{index}/approach": mockOa.approach,
   "POST /api/mockoa/{id}/problems/{index}/run": mockOa.run,
+  "POST /api/mockoa/{id}/problems/{index}/flags": mockOa.flag,
+  "GET /api/mock-tests/{problemId}": mockOa.testsInfo,
+  "POST /api/mock-tests/{problemId}/unflag": mockOa.unflag,
+  "POST /api/mock-tests/{problemId}/rewrite": mockOa.rewrite,
 });

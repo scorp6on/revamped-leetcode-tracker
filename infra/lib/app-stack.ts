@@ -222,7 +222,7 @@ export class AppStack extends cdk.Stack {
     const budgetCap = props.stage === "prod" ? "10" : "2"; // #33, #36
     const reviewFn = fn("ReviewFn", "review.ts", { timeout: cdk.Duration.minutes(2), memorySize: 256 });
     reviewFn.addEnvironment("BUDGET_CAP", budgetCap);
-    // The only Lambda that can read the API key (#27).
+    // Only the two AI Lambdas (reviews, Mock OA tests) can read the API key (#27).
     canReadSecret(reviewFn, "anthropic-api-key");
     reviewFn.addToRolePolicy(
       new iam.PolicyStatement({
@@ -235,6 +235,35 @@ export class AppStack extends cdk.Stack {
     reviewQueue.grantSendMessages(apiFn);
     apiFn.addEnvironment("REVIEW_QUEUE_URL", reviewQueue.queueUrl);
     apiFn.addEnvironment("BUDGET_CAP", budgetCap);
+
+    // Mock OA test writing (#63): one message per problem that needs tests. A write can take two model
+    // calls and two runner checks, so the Lambda gets 5 minutes and the message stays hidden for 6.
+    const testDlq = new sqs.Queue(this, "TestWriterDeadLetters", { retentionPeriod: cdk.Duration.days(14) });
+    const testQueue = new sqs.Queue(this, "TestWriterQueue", {
+      visibilityTimeout: cdk.Duration.minutes(6),
+      deadLetterQueue: { queue: testDlq, maxReceiveCount: 2 },
+    });
+    const testWriterFn = fn("TestWriterFn", "testwriter.ts", { timeout: cdk.Duration.minutes(5), memorySize: 256 });
+    testWriterFn.addEnvironment("BUDGET_CAP", budgetCap);
+    testWriterFn.addEnvironment("RUNNER_FN", runnerFn.functionName);
+    canReadSecret(testWriterFn, "anthropic-api-key");
+    // Test sets live in the problem's bucket (PROBLEM#<id> / TESTS); spend goes on the month's counter.
+    testWriterFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"],
+        resources: [table.tableArn],
+        conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["PROBLEM#*", "BUDGET#*"] } },
+      }),
+    );
+    runnerFn.grantInvoke(testWriterFn);
+    testWriterFn.addEventSource(new SqsEventSource(testQueue, { batchSize: 1 }));
+    testQueue.grantSendMessages(apiFn);
+    apiFn.addEnvironment("TEST_QUEUE_URL", testQueue.queueUrl);
+    route("/api/mockoa/{id}/problems/{index}/flags", apigw.HttpMethod.POST, apiFn);
+    route("/api/mock-tests/{problemId}", apigw.HttpMethod.GET, apiFn);
+    route("/api/mock-tests/{problemId}/unflag", apigw.HttpMethod.POST, apiFn);
+    route("/api/mock-tests/{problemId}/rewrite", apigw.HttpMethod.POST, apiFn);
+
     route("/api/reviews", apigw.HttpMethod.POST, apiFn);
     route("/api/reviews", apigw.HttpMethod.GET, apiFn);
     route("/api/budget", apigw.HttpMethod.GET, apiFn);

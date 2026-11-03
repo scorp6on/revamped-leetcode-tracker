@@ -155,7 +155,7 @@ export const buildJudgeProblem = (q: RawQuestion): JudgeProblem | string => {
     statement,
     stub,
     spec,
-    tests: q.examples.map((input, i) => ({ input, expected: outputs[i] })),
+    tests: q.examples.map((input, i) => ({ id: `e${i + 1}`, source: "example" as const, input, expected: outputs[i] })),
   };
 };
 

@@ -1,6 +1,7 @@
 import DOMPurify from "dompurify";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
+import { MockTests } from "../mockoa/MockTests";
 import type { MockOaPrefill } from "../mockoa/prefill";
 import { MAX_PREDICTION_LENGTH, type Prediction, type Problem } from "../../../api/src/problems/types";
 import { api } from "../api";
@@ -181,6 +182,7 @@ function ProblemView({
               );
             }}
           />
+          <MockTests problemId={problem.id} slug={problem.slug} />
         </>
       )}
     </>

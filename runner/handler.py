@@ -3,10 +3,10 @@
 It has no AWS permissions and no network, and the code runs in a child process with a memory cap and
 a time limit per test, so a runaway loop or a huge allocation only ends that run.
 
-Event:  {code, kind: "function"|"design", entry, params, outputParam, design, tests: [{input, expected}],
-         anyOrder, timeLimitMs}
-Result: {compileError: str|None, results: [{status: passed|wrong|error|timeout|crashed|skipped,
-         ms?, output?, error?, stdout?}]}
+Event:  {code (None = check mode), reference?, kind: "function"|"design", entry, params, outputParam,
+         design, tests: [{input | generator, seed?, expected?}], anyOrder, timeLimitMs}
+Result: {compileError: str|None, results: [{status: passed|wrong|error|timeout|invalid|crashed|skipped,
+         ms?, refMs?, limitMs?, output?, expected?, preview?, error?, stdout?}]}
 """
 
 import json
@@ -18,7 +18,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MEMORY_BYTES = 512 * 1024 * 1024
-MAX_WALL_S = 20  # the whole run, as a backstop to the per-test limit
+MAX_WALL_S = 22  # the whole run, as a backstop to the per-test limits (the Lambda allows 25)
 MAX_OUTPUT_BYTES = 2_000_000
 
 
@@ -31,7 +31,9 @@ def run(job: dict) -> dict:
     tests = job["tests"]
     marker = "@@" + secrets.token_hex(8) + "@@"
     payload = json.dumps({**job, "marker": marker})
-    wall = min(MAX_WALL_S, 2 + len(tests) * job["timeLimitMs"] / 1000)
+    # With a reference each test can take its 2 s plus your up-to-3 s limit.
+    per_test = job["timeLimitMs"] / 1000 + (5 if job.get("reference") else 0)
+    wall = min(MAX_WALL_S, 2 + len(tests) * per_test)
     try:
         proc = subprocess.run(
             [sys.executable, "-E", "-s", os.path.join(HERE, "worker.py")],
@@ -54,7 +56,10 @@ def run(job: dict) -> dict:
     for line in stdout.split("\n"):
         if not line.startswith(marker):
             continue  # your own prints to the real stdout
-        event = json.loads(line[len(marker):])
+        try:
+            event = json.loads(line[len(marker):])
+        except ValueError:
+            continue  # cut off by the output cap: that test shows as crashed below
         if event["type"] == "compile":
             compile_error = event["error"]
         elif event["type"] == "test" and 0 <= event["index"] < len(tests):

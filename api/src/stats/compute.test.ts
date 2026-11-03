@@ -203,6 +203,7 @@ describe("GET /api/stats", () => {
     schedules: async () => [],
     grades: async () => [],
     catalog: async () => catalog,
+    mockOas: async () => [],
   } as unknown as StatsStore;
   const call = (q: Record<string, string>) =>
     makeStatsHandler(store)({ queryStringParameters: q } as never) as Promise<{ statusCode: number; body: string }>;
@@ -216,5 +217,23 @@ describe("GET /api/stats", () => {
     const res = await call({ today: TODAY, range: "1y" });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body)).toMatchObject({ range: "12w", totals: { attempts: 1 } });
+  });
+});
+
+describe("Mock OA scores (#63 H)", () => {
+  const oa = (createdAt: string, testsPassed: number, testsTotal: number) => ({
+    createdAt,
+    minutes: 90,
+    count: 3,
+    summary: { passedProblems: 2, testsPassed, testsTotal, usedMinutes: 74 },
+  });
+
+  it("gives one point per finished mock OA in the range, oldest first, as the share of tests passed", () => {
+    const base = { attempts: [], schedules: [], grades: [], catalog: { names: {}, counts: {} }, today: "2026-11-03" };
+    const mockOas = [oa("2026-10-30T15:00:00.000Z", 41, 62), oa("2026-06-01T15:00:00.000Z", 10, 20), oa("2026-10-20T15:00:00.000Z", 20, 20)];
+    const recent = computeStats({ ...base, mockOas, range: "4w" }).mockOa;
+    expect(recent.map((p) => [p.at.slice(0, 10), p.score])).toEqual([["2026-10-20", 100], ["2026-10-30", 66]]);
+    expect(computeStats({ ...base, mockOas, range: "all" }).mockOa).toHaveLength(3);
+    expect(recent[1]).toMatchObject({ passed: 2, count: 3, usedMinutes: 74, minutes: 90 });
   });
 });

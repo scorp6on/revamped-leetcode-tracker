@@ -3,7 +3,7 @@ import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand, type QueryCommandInput } from "@aws-sdk/lib-dynamodb";
 import type { Catalog, CatalogEntry } from "../catalog/types";
 import { INDEX } from "../review/store";
-import type { ListEntry, PastSession, Session } from "./types";
+import type { ListEntry, PastSession, Session, TestSet } from "./types";
 
 // One field to change: its path in the session ("problems", 2, "code") and the new value.
 export type Change = [path: (string | number)[], value: unknown];
@@ -20,6 +20,9 @@ export interface MockOaStore {
   solved(): Promise<Set<string>>; // problem IDs you've solved at least once
   remove(id: string): Promise<boolean>; // false if it finished in the meantime
   removePrediction(problemId: string, createdAt: string): Promise<void>; // unless an attempt claimed it
+  testSet(problemId: string): Promise<TestSet | undefined>; // PROBLEM#<id> / TESTS (#63)
+  saveTestSet(set: TestSet): Promise<void>;
+  setFlagged(problemId: string, flagged: string[]): Promise<void>;
 }
 
 const KEYS = ["PK", "SK", "GSI1PK", "GSI1SK"];
@@ -162,6 +165,27 @@ export const dynamoMockOaStore = (tableName: string, bucket: string): MockOaStor
       } catch (err) {
         if ((err as Error).name !== "ConditionalCheckFailedException") throw err;
       }
+    },
+
+    async testSet(problemId) {
+      const { Item } = await db.send(new GetCommand({ TableName: tableName, Key: { PK: `PROBLEM#${problemId}`, SK: "TESTS" } }));
+      return Item ? (Object.fromEntries(Object.entries(Item).filter(([k]) => !KEYS.includes(k))) as TestSet) : undefined;
+    },
+
+    async saveTestSet(set) {
+      await db.send(new PutCommand({ TableName: tableName, Item: { PK: `PROBLEM#${set.problemId}`, SK: "TESTS", ...set } }));
+    },
+
+    async setFlagged(problemId, flagged) {
+      await db.send(
+        new UpdateCommand({
+          TableName: tableName,
+          Key: { PK: `PROBLEM#${problemId}`, SK: "TESTS" },
+          UpdateExpression: "SET flagged = :f",
+          ConditionExpression: "attribute_exists(PK)",
+          ExpressionAttributeValues: { ":f": flagged },
+        }),
+      );
     },
 
     async solved() {

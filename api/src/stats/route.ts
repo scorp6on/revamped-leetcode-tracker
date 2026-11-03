@@ -13,11 +13,12 @@ export const makeStatsHandler =
     const q = event.queryStringParameters ?? {};
     const range = (RANGES as readonly string[]).includes(q.range ?? "") ? (q.range as Range) : "12w";
     if (!isLocalDate(q.today)) return json(400, { error: "today must be YYYY-MM-DD" });
-    const [attempts, schedules, grades, catalog] = await Promise.all([
+    const [attempts, schedules, grades, catalog, mockOas] = await Promise.all([
       store.attempts(),
       store.schedules(),
       store.grades(),
       store.catalog(),
+      store.mockOas(),
     ]);
-    return json(200, computeStats({ attempts, schedules, grades, catalog, range, today: q.today }));
+    return json(200, computeStats({ attempts, schedules, grades, catalog, mockOas, range, today: q.today }));
   };

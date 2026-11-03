@@ -10,8 +10,11 @@ import {
   type ProblemView,
   type RunReport,
   type Session,
+  type SessionProblem,
   type SessionSummary,
   type StartRequest,
+  type TestCase,
+  type TestSet,
 } from "./types";
 
 const DIFFICULTIES: Difficulty[] = ["Easy", "Medium", "Hard"];
@@ -74,9 +77,27 @@ export const candidates = (
   );
 };
 
-export const isOver = (s: Session, now: number) => !!s.finishedAt || now > Date.parse(s.deadline) + GRACE_MS;
+export const isOver = (s: Session, now: number) => !!s.finishedAt || (!!s.deadline && now > Date.parse(s.deadline) + GRACE_MS);
 
-// What the page sees. Until the end: no title, number, topics or difficulty, nothing that names it (#62).
+// A problem's tests once its set is known (#63): the examples plus the AI's unflagged tests, or examples
+// only ("limited") when there's no full set yet.
+export const withTests = (p: SessionProblem, set: TestSet | undefined, reason: string | null): SessionProblem => {
+  const examples = p.tests.filter((t) => t.source === "example");
+  if (set?.status === "full" && set.reference) {
+    const ai = set.tests
+      .filter((t) => !set.flagged.includes(t.id))
+      .map((t): TestCase => ({ id: t.id, source: "ai", input: t.input, generator: t.generator, seed: t.seed, large: t.large }));
+    return { ...p, tests: [...examples, ...ai], reference: set.reference, testStatus: "ready", limitedReason: null };
+  }
+  return { ...p, tests: examples, reference: null, testStatus: "limited", limitedReason: reason ?? set?.reason ?? "No AI tests yet" };
+};
+
+// Run examples checks LeetCode's examples; Submit runs everything you haven't flagged (#63 G).
+export const testsFor = (p: SessionProblem, submit: boolean) =>
+  p.tests.filter((t) => (submit ? !p.flagged.includes(t.id) : t.source === "example"));
+
+// What the page sees. Until the end: no title, number, topics or difficulty, nothing that names it (#62),
+// and never the reference solution.
 export const toView = (s: Session, now: number) => ({
   ...s,
   now: new Date(now).toISOString(),
@@ -90,9 +111,17 @@ export const toView = (s: Session, now: number) => ({
       activeMs: p.activeMs,
       submissions: p.submissions,
       best: p.best,
+      bestReport: p.bestReport,
       last: p.last,
       recorded: p.recorded,
-      examples: p.tests.map((t) => t.input),
+      testStatus: p.testStatus,
+      limitedReason: p.limitedReason,
+      flagged: p.flagged,
+      testCounts: {
+        examples: p.tests.filter((t) => t.source === "example").length,
+        ai: p.tests.filter((t) => t.source === "ai" && !p.flagged.includes(t.id)).length,
+      },
+      examples: p.tests.filter((t) => t.source === "example").map((t) => t.input ?? ""),
       paramNames: p.spec.paramNames,
       revealed: s.finishedAt
         ? { problemId: p.problemId, slug: p.slug, title: p.title, difficulty: p.difficulty, tags: p.tags }
@@ -101,24 +130,33 @@ export const toView = (s: Session, now: number) => ({
   ),
 });
 
-export const reportOf = (raw: Pick<RunReport, "compileError" | "results">, submit: boolean, at: string): RunReport => ({
-  ...raw,
-  passed: raw.results.filter((r) => r.status === "passed").length,
-  total: raw.results.length,
-  submit,
-  at,
-});
+// Broken tests (the reference couldn't handle them) and flagged ones don't count either way.
+export const reportOf = (
+  raw: Pick<RunReport, "compileError" | "results">,
+  submit: boolean,
+  at: string,
+  flagged: string[] = [],
+): RunReport => {
+  const counted = raw.results.filter((r) => r.status !== "invalid" && !(r.testId && flagged.includes(r.testId)));
+  return { ...raw, passed: counted.filter((r) => r.status === "passed").length, total: counted.length, submit, at };
+};
+
+// The same report, counted again without the tests flagged since (#63 F).
+export const rescore = (r: RunReport, flagged: string[]) => reportOf(r, r.submit, r.at, flagged);
+
+const share = (r: { passed: number; total: number }) => r.passed / Math.max(1, r.total);
 
 // The best Submit counts, so a worse last-minute change can't lower a score you already had.
-export const better = (best: Session["problems"][number]["best"], r: RunReport) =>
-  !best || r.passed / Math.max(1, r.total) > best.passed / Math.max(1, best.total) ? { passed: r.passed, total: r.total } : best;
+export const better = (best: RunReport | null, r: RunReport) => (!best || share(r) > share(best) ? r : best);
+export const countsOf = (r: RunReport | null) => (r ? { passed: r.passed, total: r.total } : null);
 
 export const summarize = (s: Session, finishedAt: number): SessionSummary => {
-  const used = Math.min(s.minutes, Math.ceil((finishedAt - Date.parse(s.createdAt)) / 60_000));
+  const start = Date.parse(s.deadline ?? s.createdAt) - s.minutes * 60_000;
+  const used = Math.min(s.minutes, Math.ceil((finishedAt - start) / 60_000));
   return {
     passedProblems: s.problems.filter((p) => passedProblem(p.best)).length,
     testsPassed: s.problems.reduce((n, p) => n + (p.best?.passed ?? 0), 0),
-    testsTotal: s.problems.reduce((n, p) => n + (p.best?.total ?? p.tests.length), 0),
+    testsTotal: s.problems.reduce((n, p) => n + (p.best?.total ?? testsFor(p, true).length), 0),
     usedMinutes: Math.max(1, used),
   };
 };
@@ -126,3 +164,18 @@ export const summarize = (s: Session, finishedAt: number): SessionSummary => {
 // Time's up or Finish: these problems' current code still needs a Submit (#62: auto-submit everything).
 export const needsFinalSubmit = (s: Session) =>
   s.problems.map((p, i) => ({ p, i })).filter(({ p }) => p.code.trim() !== "" && p.code !== p.stub && p.code !== p.submittedCode);
+
+// Tests started before M11b were saved without the AI-test fields: fill in what they mean (examples only).
+export const normalize = (s: Session): Session => ({
+  ...s,
+  preparingSince: s.preparingSince ?? null,
+  problems: s.problems.map((p) => ({
+    ...p,
+    tests: p.tests.map((t, i) => ({ ...t, id: t.id ?? `e${i + 1}`, source: t.source ?? "example" })),
+    reference: p.reference ?? null,
+    testStatus: p.testStatus ?? "limited",
+    limitedReason: p.limitedReason ?? (p.testStatus ? null : "Started before AI tests existed"),
+    flagged: p.flagged ?? [],
+    bestReport: p.bestReport ?? null,
+  })),
+});

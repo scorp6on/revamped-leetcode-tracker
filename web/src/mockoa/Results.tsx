@@ -6,19 +6,37 @@ import { DifficultyBadge } from "../components/DifficultyBadge";
 import { Button } from "../components/ui/button";
 import { localToday } from "../queue/rank";
 import { shortDate } from "../queue/useSchedule";
-import { minutesOf, passes, pct, prefillFor } from "./helpers";
+import type { HistoryAttempt } from "../../../api/src/review/types";
+import { api } from "../api";
+import { minutesOf, passes, pct, prefillFor, usualMinutes } from "./helpers";
 import type { MockOaPrefill } from "./prefill";
+import { Report } from "./Report";
 
 // After the test: titles and topics come back, and each problem can be recorded like any attempt (#62).
-export function Results({ session }: { session: SessionView }) {
+export function Results({ session: initial }: { session: SessionView }) {
   const navigate = useNavigate();
+  const [session, setSession] = useState(initial); // a flag scores it again
   const [topicNames, setTopicNames] = useState<Record<string, string>>({});
+  const [usual, setUsual] = useState<Record<string, number>>({});
+  const [notice, setNotice] = useState<string | null>(null);
   useEffect(() => {
     fetch("/data/catalog.json")
       .then((res) => (res.ok ? (res.json() as Promise<Catalog>) : null))
       .then((c) => c && setTopicNames(c.tags))
       .catch(() => {});
+    // Your usual time per difficulty, for the slow note (#63).
+    api("/api/history")
+      .then((res) => (res.ok ? (res.json() as Promise<{ attempts: HistoryAttempt[] }>) : null))
+      .then((d) => d && setUsual(usualMinutes(d.attempts)))
+      .catch(() => {});
   }, []);
+
+  const flag = (index: number) => async (testId: string, on: boolean) => {
+    const res = await api(`/api/mockoa/${session.id}/problems/${index}/flags`, { method: "POST", body: JSON.stringify({ testId, flagged: on }) });
+    if (!res.ok) return setNotice((await res.json()).error ?? "Couldn't flag that test.");
+    setNotice(null);
+    setSession(((await res.json()) as { session: SessionView }).session);
+  };
 
   const s = session.summary!;
   const day = shortDate(localToday(new Date(session.createdAt)));
@@ -60,7 +78,7 @@ export function Results({ session }: { session: SessionView }) {
         <ul className="divide-y">
           {session.problems.map((p) => {
             const r = p.revealed!;
-            const best = p.best ?? { passed: 0, total: p.examples.length };
+            const best = p.best ?? { passed: 0, total: p.testCounts.examples + p.testCounts.ai };
             const share = pct(best.passed, best.total);
             const minutes = minutesOf(p.activeMs);
             const fill = prefillFor(session, p);
@@ -73,7 +91,7 @@ export function Results({ session }: { session: SessionView }) {
               summary: `mock OA on ${day} · ${best.passed} of ${best.total} tests`,
             };
             return (
-              <li key={p.index} className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(0,1fr)_150px_90px_170px] md:items-center">
+              <li key={p.index} className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(0,1fr)_150px_110px_170px] md:items-center">
                 <div className="flex min-w-0 flex-col gap-1">
                   <span className="flex flex-wrap items-center gap-2 font-medium">
                     <Link to={`/problems/${r.slug}`} className="hover:underline">
@@ -83,6 +101,15 @@ export function Results({ session }: { session: SessionView }) {
                   </span>
                   <span className="text-[13px] text-muted-foreground">Your approach: {p.approach ?? "none locked"}</span>
                   <span className="text-xs text-muted-foreground">Topics: {r.tags.map((t) => topicNames[t] ?? t).join(", ") || "none"}</span>
+                  {p.bestReport && (
+                    <details>
+                      <summary className="flex min-h-11 cursor-pointer items-center text-[13px] text-muted-foreground">
+                        Tests · {p.bestReport.passed} of {p.bestReport.total} passed
+                        {p.testStatus === "limited" ? " · limited tests (examples only)" : ""}
+                      </summary>
+                      <Report report={p.bestReport} flagged={p.flagged} onFlag={flag(p.index)} />
+                    </details>
+                  )}
                   {p.code !== p.stub && (
                     <details>
                       <summary className="flex min-h-11 cursor-pointer items-center text-[13px] text-muted-foreground">Your code</summary>
@@ -100,7 +127,12 @@ export function Results({ session }: { session: SessionView }) {
                   </span>
                   <span className="text-xs text-muted-foreground">{passes(p.best) ? "✓ passed" : `× not passed (${PASS_RATIO * 100}% needed)`}</span>
                 </div>
-                <span className="tabular-nums">{minutes} min</span>
+                <span className="flex flex-col">
+                  <span className="tabular-nums">{minutes} min</span>
+                  {passes(p.best) && usual[r.difficulty] !== undefined && minutes > usual[r.difficulty] && (
+                    <span className="text-xs text-muted-foreground">slower than your usual {usual[r.difficulty]}</span>
+                  )}
+                </span>
                 <div className="flex md:justify-end">
                   {p.recorded ? (
                     <span className="text-[13px] text-muted-foreground">Recorded</span>
@@ -116,6 +148,11 @@ export function Results({ session }: { session: SessionView }) {
         </ul>
       </section>
 
+      {notice && (
+        <p role="alert" className="text-[13px]">
+          {notice}
+        </p>
+      )}
       <Link to="/mock-oa" className="self-start py-2 text-muted-foreground hover:text-foreground">
         ← Mock OA
       </Link>

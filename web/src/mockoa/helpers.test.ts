@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProblemView, SessionView } from "../../../api/src/mockoa/types";
-import { clampCount, clampMinutes, clock, prefillFor, stepMinutes } from "./helpers";
+import { clampCount, clampMinutes, clock, prefillFor, stepMinutes, usualMinutes } from "./helpers";
 
 describe("the clock", () => {
   it("shows minutes and seconds, hours past an hour, and stops at zero", () => {
@@ -30,5 +30,15 @@ describe("filling in the record form", () => {
 
   it("suggests Ran out of time when the clock ended the test", () => {
     expect(prefillFor(session("2026-11-03T13:00:00.000Z"), problem(0, 0))).toEqual({ outcome: "failed", failureMode: "ran-out-of-time" });
+  });
+});
+
+describe("your usual time", () => {
+  const a = (difficulty: string, minutes: number, outcome = "solved") => ({ difficulty, minutes, outcome });
+
+  it("is the median of Solved attempts, once there are 3 at that difficulty", () => {
+    const usual = usualMinutes([a("Medium", 20), a("Medium", 30), a("Medium", 22), a("Medium", 90, "failed"), a("Easy", 5), a("Easy", 9)]);
+    expect(usual).toEqual({ Medium: 22 });
+    expect(usualMinutes([a("Hard", 30), a("Hard", 40), a("Hard", 50), a("Hard", 60)])).toEqual({ Hard: 45 });
   });
 });

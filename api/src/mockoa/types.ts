@@ -5,7 +5,8 @@ export const MAX_PROBLEMS = 10;
 export const MIN_OA_MINUTES = 5;
 export const MAX_OA_MINUTES = 300;
 export const PASS_RATIO = 0.8; // a problem counts as passed at 80% of its tests (#17)
-export const TIME_LIMIT_MS = 2000; // per test, until M11b compares against a reference solution
+export const TIME_LIMIT_MS = 2000; // per test when there's no reference solution (limited tests)
+export const PREPARE_MS = 90_000; // Start waits at most this long for tests to be written (#63)
 export const GRACE_MS = 30_000; // a submit sent just before 0:00 still counts
 export const MAX_CODE_LENGTH = 50_000;
 export const NEUTRAL_FUNCTION = "solve"; // the function's real name gives the problem away (#62)
@@ -23,16 +24,51 @@ export interface JudgeSpec {
   anyOrder: boolean; // the statement says "in any order"
 }
 
+// One test in a mock OA: a LeetCode example (with its answer), or one the AI wrote (#63). An AI test's
+// answer comes from running the reference next to your code, so it isn't stored.
 export interface TestCase {
-  input: string; // one JSON value per line, LeetCode's format
-  expected: string;
+  id: string; // "e1" for examples, "t1" / "L1" for the AI's small and large tests
+  source: "example" | "ai";
+  input?: string; // one JSON value per line, LeetCode's format
+  generator?: string; // large tests: Python defining make(), run with this seed
+  seed?: number;
+  expected?: string;
+  large?: boolean;
 }
 
-export type TestStatus = "passed" | "wrong" | "error" | "timeout" | "crashed" | "skipped";
+// The AI's tests for one problem, written once and kept (#32, #63): PROBLEM#<id> / TESTS.
+export interface AiTest {
+  id: string;
+  input?: string;
+  generator?: string;
+  seed?: number;
+  large: boolean;
+}
+
+export interface TestSet {
+  problemId: string;
+  status: "full" | "limited"; // limited = examples only this time
+  reason?: string; // why it's limited, or why the last rewrite didn't take
+  reference: string | null; // never sent to the page: it's the answer
+  tests: AiTest[];
+  flagged: string[]; // test IDs you flagged as wrong; they never count
+  model: string | null;
+  writtenAt: string;
+  costUsd: number;
+}
+
+// invalid = the test itself is broken (the reference couldn't handle it), so it doesn't count.
+export type TestStatus = "passed" | "wrong" | "error" | "timeout" | "invalid" | "crashed" | "skipped";
 
 export interface TestResult {
   status: TestStatus;
+  testId?: string;
+  source?: TestCase["source"];
+  large?: boolean;
   ms?: number;
+  refMs?: number; // the reference's time on this test
+  limitMs?: number; // 5x that, at least 100 ms (#62 C)
+  preview?: string; // a large generated input, shortened
   output?: string;
   error?: string;
   stdout?: string;
@@ -68,7 +104,12 @@ export interface SessionProblem {
   submissions: number;
   submittedCode: string | null; // what the last Submit ran, so time-up only re-runs changed code
   best: { passed: number; total: number } | null; // the best Submit counts
+  bestReport: RunReport | null; // its per-test results, so a flag can re-score it (#63 F)
   last: RunReport | null;
+  reference: string | null; // runs next to your code; never sent to the page
+  testStatus: "ready" | "writing" | "limited";
+  limitedReason: string | null;
+  flagged: string[]; // AI tests flagged during this test
   recorded: boolean;
 }
 
@@ -85,7 +126,8 @@ export type ProblemSource = "catalog" | "list";
 export interface Session {
   id: string;
   createdAt: string;
-  deadline: string; // kept on the server, so a refresh or a closed tab doesn't reset the clock (#62 A)
+  deadline: string | null; // kept on the server, so a refresh or a closed tab doesn't reset the clock (#62 A); null while preparing
+  preparingSince: string | null; // waiting for tests to be written (#63); the clock starts after
   minutes: number;
   source: ProblemSource;
   finishedAt: string | null;
@@ -110,8 +152,9 @@ export interface ListEntry {
 }
 
 // What the page gets: before the end, nothing that names the problem.
-export type ProblemView = Omit<SessionProblem, "problemId" | "slug" | "title" | "difficulty" | "tags" | "tests" | "submittedCode" | "spec" | "approachAt"> & {
+export type ProblemView = Omit<SessionProblem, "problemId" | "slug" | "title" | "difficulty" | "tags" | "tests" | "submittedCode" | "spec" | "approachAt" | "reference"> & {
   index: number;
+  testCounts: { examples: number; ai: number };
   examples: string[]; // example inputs, shown as "name = value"
   paramNames: string[];
   revealed: { problemId: string; slug: string; title: string; difficulty: Difficulty; tags: string[] } | null;

@@ -8,6 +8,7 @@ import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import { Editor } from "./Editor";
 import { clock, clockOffset, draftOf, dropDrafts, keepDraft, passes } from "./helpers";
+import { Preparing } from "./Preparing";
 import { Report } from "./Report";
 import { Results } from "./Results";
 
@@ -45,7 +46,9 @@ export function SessionPage() {
     );
   }
   if (session.finishedAt) return <Results session={session} />;
-  return <Running initial={session} onFinished={setSession} />;
+  // Tests are still being written (#63): the clock hasn't started.
+  if (session.preparingSince || !session.deadline) return <Preparing session={session} onUpdate={setSession} />;
+  return <Running key={session.deadline} initial={session} onFinished={setSession} />;
 }
 
 function Running({ initial, onFinished }: { initial: SessionView; onFinished: (s: SessionView) => void }) {
@@ -58,6 +61,7 @@ function Running({ initial, onFinished }: { initial: SessionView; onFinished: (s
   const [approaches, setApproaches] = useState(() => initial.problems.map((p) => p.approach));
   const [reports, setReports] = useState<(RunReport | null)[]>(() => initial.problems.map((p) => p.last));
   const [best, setBest] = useState(() => initial.problems.map((p) => p.best));
+  const [flagged, setFlagged] = useState(() => initial.problems.map((p) => p.flagged));
   const [running, setRunning] = useState<"run" | "submit" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
@@ -80,7 +84,7 @@ function Running({ initial, onFinished }: { initial: SessionView; onFinished: (s
 
   // The clock, corrected by the server's time so a wrong device clock can't change it.
   const offset = useMemo(() => clockOffset(initial.now, Date.now()), [initial.now]);
-  const deadline = Date.parse(initial.deadline);
+  const deadline = Date.parse(initial.deadline!);
   const [left, setLeft] = useState(() => deadline - (Date.now() + offset));
 
   // Time on each problem: counted while it's open and the page is visible.
@@ -161,6 +165,16 @@ function Running({ initial, onFinished }: { initial: SessionView; onFinished: (s
     }
   };
 
+  // ⚑ This test looks wrong (#63): it stops counting, and the server scores the problem again.
+  const flag = async (testId: string, on: boolean) => {
+    const res = await api(`/api/mockoa/${id}/problems/${index}/flags`, { method: "POST", body: JSON.stringify({ testId, flagged: on }) });
+    if (!res.ok) return setNotice((await res.json()).error ?? "Couldn't flag that test.");
+    const p = ((await res.json()) as { session: SessionView }).session.problems[index];
+    setFlagged((fs) => fs.map((f, i) => (i === index ? p.flagged : f)));
+    setBest((bs) => bs.map((b, i) => (i === index ? p.best : b)));
+    setReports((rs) => rs.map((r, i) => (i === index ? p.last : r)));
+  };
+
   const pick = (i: number) => setParams((p) => ({ ...Object.fromEntries(p), p: String(i + 1) }), { replace: true });
   const problem = initial.problems[index];
   const statement = useMemo(() => DOMPurify.sanitize(problem.statement), [problem.statement]);
@@ -226,8 +240,18 @@ function Running({ initial, onFinished }: { initial: SessionView; onFinished: (s
 
       <main className="mx-auto grid w-full max-w-[1400px] flex-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         <section aria-label="Problem" className={cn("flex min-w-0 flex-col gap-3 px-4 py-5 sm:px-6 lg:border-r", pane !== "problem" && "hidden lg:flex")}>
-          <h1 className="text-xl font-semibold">Problem {index + 1}</h1>
-          <span className="text-xs text-muted-foreground">Title, number, topics and difficulty are hidden until you finish.</span>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-xl font-semibold">Problem {index + 1}</h1>
+            {problem.testStatus === "limited" && (
+              <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-xs text-muted-foreground">Limited tests</span>
+            )}
+          </div>
+          <span className="text-xs text-muted-foreground">
+            Title, number, topics and difficulty are hidden until you finish ·{" "}
+            {problem.testStatus === "limited"
+              ? `only the ${problem.testCounts.examples} examples: ${problem.limitedReason ?? "no AI tests"}. No speed check, and edge cases may be missed.`
+              : `${problem.testCounts.examples + problem.testCounts.ai} tests (${problem.testCounts.examples} examples + ${problem.testCounts.ai} written by AI)`}
+          </span>
           <div className="statement" dangerouslySetInnerHTML={{ __html: statement }} />
         </section>
 
@@ -270,7 +294,7 @@ function Running({ initial, onFinished }: { initial: SessionView; onFinished: (s
               {notice}
             </p>
           )}
-          {reports[index] && <Report key={reports[index]!.at} report={reports[index]!} />}
+          {reports[index] && <Report key={reports[index]!.at} report={reports[index]!} flagged={flagged[index]} onFlag={flag} />}
         </section>
       </main>
     </div>

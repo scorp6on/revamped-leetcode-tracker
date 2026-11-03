@@ -26,7 +26,7 @@ export const stepMinutes = (n: number, dir: 1 | -1) => clampMinutes(dir > 0 ? Ma
 // were still on when the clock ran out suggests "Ran out of time"; anything else is yours to pick.
 export const prefillFor = (s: SessionView, p: ProblemView): { outcome: Outcome; failureMode: FailureMode | null } => {
   if (passes(p.best)) return { outcome: "solved", failureMode: null };
-  const ranOut = !!s.finishedAt && Date.parse(s.finishedAt) >= Date.parse(s.deadline);
+  const ranOut = !!s.finishedAt && !!s.deadline && Date.parse(s.finishedAt) >= Date.parse(s.deadline);
   return { outcome: "failed", failureMode: ranOut ? "ran-out-of-time" : null };
 };
 
@@ -52,4 +52,18 @@ export const dropDrafts = (id: string, count: number) => {
   } catch {
     // nothing to clean
   }
+};
+
+// Your usual time per difficulty for the slow note (#63 H): the median minutes of Solved attempts,
+// only once there are 3 or more at that difficulty.
+export const MIN_SOLVES_FOR_USUAL = 3;
+export const usualMinutes = (attempts: { difficulty: string; outcome: string; minutes: number }[]) => {
+  const out: Record<string, number> = {};
+  for (const d of ["Easy", "Medium", "Hard"]) {
+    const mins = attempts.filter((a) => a.difficulty === d && a.outcome === "solved").map((a) => a.minutes).sort((a, b) => a - b);
+    if (mins.length < MIN_SOLVES_FOR_USUAL) continue;
+    const mid = Math.floor(mins.length / 2);
+    out[d] = mins.length % 2 ? mins[mid] : Math.round((mins[mid - 1] + mins[mid]) / 2);
+  }
+  return out;
 };

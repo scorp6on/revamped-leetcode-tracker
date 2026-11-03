@@ -13,6 +13,7 @@ import {
   type PredictionGrade,
   type Range,
   type StatsAttempt,
+  type StatsMockOa,
   type StatsResponse,
   type StatsSchedule,
 } from "./types";
@@ -54,6 +55,7 @@ export function computeStats(input: {
   schedules: StatsSchedule[];
   grades: PredictionGrade[];
   catalog: CatalogSummary;
+  mockOas?: StatsMockOa[];
   range: Range;
   today: string;
 }): StatsResponse {
@@ -174,5 +176,17 @@ export function computeStats(input: {
     retention: { buckets: series(retentionOf), rate: retention.value, reviews: retention.n },
     failureModes,
     gaps,
+    // One point per finished mock OA: the share of all its tests you passed (#14, #63).
+    mockOa: (input.mockOas ?? [])
+      .filter((m) => range === "all" || m.createdAt.slice(0, 10) >= starts[0])
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map((m) => ({
+        at: m.createdAt,
+        score: percent(m.summary.testsPassed, m.summary.testsTotal) ?? 0,
+        passed: m.summary.passedProblems,
+        count: m.count,
+        usedMinutes: m.summary.usedMinutes,
+        minutes: m.minutes,
+      })),
   };
 }

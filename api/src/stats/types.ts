@@ -44,6 +44,14 @@ export interface Bucket {
   n: number; // how many attempts the value is built from
 }
 
+// A finished mock OA, as Stats reads it from the MOCKOAS drawer (#63 H).
+export interface StatsMockOa {
+  createdAt: string;
+  minutes: number;
+  count: number;
+  summary: { passedProblems: number; testsPassed: number; testsTotal: number; usedMinutes: number };
+}
+
 export interface StatsResponse {
   range: Range;
   today: string;
@@ -61,6 +69,7 @@ export interface StatsResponse {
   retention: { buckets: Bucket[]; rate: number | null; reviews: number };
   failureModes: { mode: FailureMode; buckets: number[]; last: number; prev: number }[];
   gaps: { tag: string; name: string; attempts: number; problems: number }[]; // now
+  mockOa: { at: string; score: number; passed: number; count: number; usedMinutes: number; minutes: number }[]; // in range, oldest first
 }
 
 export interface ModeCount {

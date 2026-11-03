@@ -286,10 +286,72 @@ export function Gaps({ s }: { s: StatsResponse }) {
   );
 }
 
-export function MockOa() {
+// One point per finished mock OA: the share of its tests you passed (#14, #63 H). Spaced by test, not by
+// date, so two tests in a week don't crowd each other.
+export function MockOa({ s }: { s: StatsResponse }) {
+  const points = s.mockOa;
+  const about = "Your score on each timed mock online assessment: the share of all its tests you passed.";
+  if (!points.length) {
+    return (
+      <Card title="Mock OA scores" about={about}>
+        <Empty>
+          No finished mock OAs {s.range === "all" ? "yet" : `in the ${RANGE_LABEL[s.range].toLowerCase()}`}.{" "}
+          <Link to="/mock-oa" className="underline">
+            Take one
+          </Link>
+        </Empty>
+      </Card>
+    );
+  }
+  const scores = points.map((p) => p.score);
+  const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+  const day = (at: string) => new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const x = (i: number) => (points.length === 1 ? 50 : 4 + (i / (points.length - 1)) * 92);
+  const line = points.map((p, i) => `${i ? "L" : "M"}${x(i)},${100 - p.score}`).join(" ");
+  const detail = (p: (typeof points)[number]) =>
+    `${day(p.at)}: ${p.score}% · ${p.passed} of ${p.count} passed · ${p.usedMinutes} of ${p.minutes} min`;
   return (
-    <Card title="Mock OA scores" about="Your score on each timed mock online assessment, so you can see how you do under test conditions.">
-      <Empty>No mock OAs yet. Scores show up here once Mock OA is built.</Empty>
+    <Card
+      title="Mock OA scores"
+      about={about}
+      foot={`Latest ${scores.at(-1)}%, best ${Math.max(...scores)}%, average ${avg}% over ${points.length}.`}
+    >
+      <figure className="m-0 flex flex-col gap-1.5">
+        <div className="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-x-1.5 gap-y-1.5">
+          <div aria-hidden="true" className="flex h-36 flex-col justify-between text-right text-[11px] text-muted-foreground">
+            <span>100%</span>
+            <span>50%</span>
+            <span>0%</span>
+          </div>
+          <div className="relative h-36 border-b">
+            <div aria-hidden="true" className="absolute inset-x-0 top-0 border-t border-dashed" />
+            <div aria-hidden="true" className="absolute inset-x-0 top-1/2 border-t border-dashed" />
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 size-full overflow-visible" aria-hidden="true">
+              <path d={line} fill="none" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+            </svg>
+            {points.map((p, i) => (
+              <span
+                key={p.at}
+                title={detail(p)}
+                aria-hidden="true"
+                className="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground ring-2 ring-background"
+                style={{ left: `${x(i)}%`, top: `${100 - p.score}%` }}
+              />
+            ))}
+          </div>
+          <span />
+          <div aria-hidden="true" className="flex justify-between text-[11px] text-muted-foreground">
+            <span>{day(points[0].at)}</span>
+            {points.length > 1 && <span>{day(points.at(-1)!.at)}</span>}
+          </div>
+        </div>
+        <figcaption className="sr-only">Mock OA scores, oldest first</figcaption>
+        <ul className="sr-only">
+          {points.map((p) => (
+            <li key={p.at}>{detail(p)}</li>
+          ))}
+        </ul>
+      </figure>
     </Card>
   );
 }

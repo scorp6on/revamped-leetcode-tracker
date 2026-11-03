@@ -5,7 +5,8 @@ import { buildJudgeProblem, exampleOutputs, showInput, type RawQuestion } from "
 import { makeMockOaRoutes, type RunCode } from "./routes";
 import { candidates, parseStart, toView } from "./session";
 import { updateExpression, type Change, type MockOaStore } from "./store";
-import type { Session } from "./types";
+import type { Session, TestSet } from "./types";
+import type { WriterMessage } from "./writer";
 
 const twoSum = (over: Partial<RawQuestion> = {}): RawQuestion => ({
   id: "1",
@@ -55,8 +56,11 @@ describe("reading LeetCode problems", () => {
     expect(p.statement).toContain("<code>solve(nums, target)</code>");
     expect(p.statement).not.toMatch(/twoSum/);
     expect(p.spec).toMatchObject({ kind: "function", realName: "twoSum", params: ["integer[]", "integer"], anyOrder: true });
-    expect(p.tests).toEqual([{ input: "[2,7,11,15]\n9", expected: "[0,1]" }, { input: "[3,2,4]\n6", expected: "[1,2]" }]);
-    expect(showInput(p.spec, p.tests[0].input)).toBe("nums = [2,7,11,15], target = 9");
+    expect(p.tests).toEqual([
+      { id: "e1", source: "example", input: "[2,7,11,15]\n9", expected: "[0,1]" },
+      { id: "e2", source: "example", input: "[3,2,4]\n6", expected: "[1,2]" },
+    ]);
+    expect(showInput(p.spec, p.tests[0].input!)).toBe("nums = [2,7,11,15], target = 9");
   });
 
   it("only renames a function name where it's code, since it can be an English word", () => {
@@ -127,8 +131,9 @@ describe("update expressions", () => {
 });
 
 // An in-memory store that applies changes like DynamoDB would.
-const memoryStore = (sessions: Session[] = []) => {
+const memoryStore = (sessions: Session[] = [], testSets: TestSet[] = []) => {
   const removed: string[] = [];
+  const sets = new Map(testSets.map((t) => [t.problemId, structuredClone(t)]));
   const byId = new Map(sessions.map((s) => [s.id, structuredClone(s)]));
   const store: MockOaStore = {
     get: async (id) => structuredClone(byId.get(id)),
@@ -153,8 +158,11 @@ const memoryStore = (sessions: Session[] = []) => {
       return byId.delete(id);
     },
     removePrediction: async (problemId, createdAt) => void removed.push(`${problemId}@${createdAt}`),
+    testSet: async (id) => structuredClone(sets.get(id)),
+    saveTestSet: async (t) => void sets.set(t.problemId, structuredClone(t)),
+    setFlagged: async (id, flagged) => void (sets.get(id)!.flagged = [...flagged]),
   };
-  return { store, byId, removed };
+  return { store, byId, removed, sets };
 };
 
 const T0 = Date.parse("2026-11-03T12:00:00.000Z");
@@ -164,29 +172,57 @@ const event = (path: Record<string, string>, body?: unknown) =>
 const bodyOf = (r: unknown) => JSON.parse((r as APIGatewayProxyStructuredResultV2).body as string);
 const status = (r: unknown) => (r as APIGatewayProxyStructuredResultV2).statusCode;
 
-describe("a mock OA from start to finish", () => {
-  const setup = () => {
-    let clock = T0;
-    const runs: Record<string, unknown>[] = [];
-    // The fake runner passes a test when the code mentions "good".
-    const runCode: RunCode = async (job) => {
-      runs.push(job);
-      const pass = String(job.code).includes("good");
-      return { compileError: null, results: (job.tests as unknown[]).map(() => ({ status: pass ? "passed" : "wrong", output: "[9]" })) };
+// A written test set for Two Sum: 2 small AI tests and 1 large one.
+const fullSet = (over: Partial<TestSet> = {}): TestSet => ({
+  problemId: "1",
+  status: "full",
+  reference: "class Solution:\n    def solve(self, nums, target): ...",
+  tests: [
+    { id: "t1", input: "[1,5]\n6", large: false },
+    { id: "t2", input: "[5,5]\n10", large: false },
+    { id: "L1", generator: "def make(): ...", seed: 1, large: true },
+  ],
+  flagged: [],
+  model: "claude-haiku-5-5",
+  writtenAt: new Date(T0 - 86_400_000).toISOString(),
+  costUsd: 0.003,
+  ...over,
+});
+
+// budget: false means no test writing, so a problem without a set starts on examples right away.
+const setup = ({ sets = [] as TestSet[], budget = false } = {}) => {
+  let clock = T0;
+  const runs: Record<string, unknown>[] = [];
+  // The fake runner passes a test when the code mentions "good", except the test whose input is "[5,5]".
+  const runCode: RunCode = async (job) => {
+    runs.push(job);
+    const pass = String(job.code).includes("good");
+    return {
+      compileError: null,
+      results: (job.tests as { input?: string }[]).map((t) => ({
+        status: pass && !t.input?.startsWith("[5,5]") ? "passed" : "wrong",
+        output: "[9]",
+      })),
     };
-    const saved: unknown[] = [];
-    const mem = memoryStore();
-    const routes = makeMockOaRoutes({
-      store: mem.store,
-      fetchQuestion: async () => twoSum(),
-      runCode,
-      predictions: { save: async (p) => void saved.push(p) },
-      now: () => clock,
-      random: () => 0.5,
-      newId: () => ID,
-    });
-    return { routes, runs, saved, mem, tick: (ms: number) => (clock += ms) };
   };
+  const saved: unknown[] = [];
+  const queued: WriterMessage[] = [];
+  const mem = memoryStore([], sets);
+  const routes = makeMockOaRoutes({
+    store: mem.store,
+    fetchQuestion: async () => twoSum(),
+    runCode,
+    predictions: { save: async (p) => void saved.push(p) },
+    enqueueTests: async (m) => void queued.push(m),
+    budgetLeft: async () => budget,
+    now: () => clock,
+    random: () => 0.5,
+    newId: () => ID,
+  });
+  return { routes, runs, saved, queued, mem, tick: (ms: number) => (clock += ms) };
+};
+
+describe("a mock OA from start to finish", () => {
 
   it("hides what names the problem until the end, then shows it", async () => {
     const { routes } = setup();
@@ -274,16 +310,137 @@ describe("a mock OA from start to finish", () => {
 });
 
 describe("the page's view", () => {
-  it("shows example inputs but not tests' expected answers", () => {
+  it("shows example inputs but never the tests' answers or the reference solution", () => {
     const p = buildJudgeProblem(twoSum());
     if (typeof p === "string") throw new Error(p);
     const s: Session = {
-      id: ID, createdAt: "", deadline: "", minutes: 30, source: "catalog", finishedAt: null, summary: null, count: 1,
-      problems: [{ ...p, code: "", approach: null, activeMs: 0, submissions: 0, submittedCode: null, best: null, last: null, recorded: false }],
+      id: ID, createdAt: "", deadline: "", preparingSince: null, minutes: 30, source: "catalog", finishedAt: null, summary: null, count: 1,
+      problems: [{
+        ...p, code: "", approach: null, activeMs: 0, submissions: 0, submittedCode: null, best: null, bestReport: null, last: null,
+        recorded: false, reference: "class Solution: secret", testStatus: "ready", limitedReason: null, flagged: [],
+      }],
     };
     const v = toView(s, T0).problems[0];
     expect(v.examples).toEqual(["[2,7,11,15]\n9", "[3,2,4]\n6"]);
     expect(v).not.toHaveProperty("tests");
     expect(v).not.toHaveProperty("spec");
+    expect(JSON.stringify(v)).not.toContain("secret");
+  });
+});
+
+describe("tests saved before M11b", () => {
+  it("open as examples-only tests instead of failing", async () => {
+    const p = buildJudgeProblem(twoSum());
+    if (typeof p === "string") throw new Error(p);
+    const old = {
+      id: ID, createdAt: new Date(T0).toISOString(), deadline: new Date(T0 + 1_800_000).toISOString(), minutes: 30, source: "catalog",
+      finishedAt: new Date(T0 + 600_000).toISOString(), summary: { passedProblems: 1, testsPassed: 2, testsTotal: 2, usedMinutes: 10 }, count: 1,
+      problems: [{
+        ...p, tests: p.tests.map(({ input, expected }) => ({ input, expected })), code: "x", approach: "y", activeMs: 0, submissions: 1,
+        submittedCode: "x", best: { passed: 2, total: 2 }, last: null, recorded: false,
+      }],
+    } as unknown as Session;
+    const mem = memoryStore([old]);
+    const routes = makeMockOaRoutes({
+      store: mem.store, fetchQuestion: async () => null, runCode: async () => ({ compileError: null, results: [] }),
+      predictions: { save: async () => {} }, enqueueTests: async () => {}, budgetLeft: async () => false,
+      now: () => T0 + 3_600_000, random: Math.random, newId: () => ID,
+    });
+    const { session } = bodyOf(await routes.get(event({ id: ID })));
+    expect(session.problems[0]).toMatchObject({ testStatus: "limited", flagged: [], testCounts: { examples: 2, ai: 0 }, best: { passed: 2, total: 2 } });
+  });
+});
+
+describe("AI-written tests in a mock OA (#63)", () => {
+  const start = (r: ReturnType<typeof setup>) => r.routes.start(event({}, { count: 1, minutes: 30, source: "catalog" }));
+  const view = async (r: ReturnType<typeof setup>) => bodyOf(await r.routes.get(event({ id: ID }))).session;
+
+  it("uses a problem's written tests right away, never sending the reference to the page", async () => {
+    const r = setup({ sets: [fullSet()] });
+    await start(r);
+    const s = await view(r);
+    expect(s.preparingSince).toBeNull();
+    expect(s.deadline).toBe(new Date(T0 + 30 * 60_000).toISOString());
+    expect(s.problems[0]).toMatchObject({ testStatus: "ready", testCounts: { examples: 2, ai: 3 } });
+    expect(JSON.stringify(s)).not.toContain("def solve(self, nums, target): ...");
+    expect(r.queued).toEqual([]);
+  });
+
+  it("waits for new tests before the clock starts, then attaches them", async () => {
+    const r = setup({ budget: true });
+    await start(r);
+    expect(r.queued).toEqual([{ problemId: "1", slug: "two-sum" }]);
+    let s = await view(r);
+    expect(s.deadline).toBeNull();
+    expect(s.problems[0].testStatus).toBe("writing");
+    const ref = { id: ID, index: "0" };
+    expect(status(await r.routes.approach(event(ref, { text: "x" })))).toBe(409); // not started yet
+
+    r.tick(20_000);
+    await r.mem.store.saveTestSet(fullSet({ writtenAt: new Date(T0 + 15_000).toISOString() }));
+    s = await view(r);
+    expect(s.preparingSince).toBeNull();
+    expect(s.deadline).toBe(new Date(T0 + 20_000 + 30 * 60_000).toISOString()); // 30 minutes from when it was ready
+    expect(s.problems[0].testStatus).toBe("ready");
+  });
+
+  it("starts after 90 s anyway, on examples only, if the tests aren't ready", async () => {
+    const r = setup({ budget: true });
+    await start(r);
+    r.tick(91_000);
+    const s = await view(r);
+    expect(s.deadline).not.toBeNull();
+    expect(s.problems[0]).toMatchObject({ testStatus: "limited", testCounts: { examples: 2, ai: 0 } });
+    expect(s.problems[0].limitedReason).toMatch(/still writing/);
+  });
+
+  it("doesn't write tests when the monthly budget is used up", async () => {
+    const r = setup({ budget: false });
+    await start(r);
+    const s = await view(r);
+    expect(r.queued).toEqual([]);
+    expect(s.problems[0]).toMatchObject({ testStatus: "limited", limitedReason: "The monthly AI budget is used up" });
+  });
+
+  it("Run checks only the examples; Submit runs all, with the reference next to your code", async () => {
+    const r = setup({ sets: [fullSet()] });
+    await start(r);
+    const ref = { id: ID, index: "0" };
+    await r.routes.approach(event(ref, { text: "hash map" }));
+    await r.routes.run(event(ref, { code: "good", submit: false }));
+    await r.routes.run(event(ref, { code: "good", submit: true }));
+    expect((r.runs[0].tests as unknown[]).length).toBe(2);
+    expect((r.runs[1].tests as unknown[]).length).toBe(5);
+    expect(r.runs[1].reference).toBe(fullSet().reference);
+    expect(r.runs[1].tests).toContainEqual({ generator: "def make(): ...", seed: 1 });
+  });
+
+  it("a flag drops the test and scores the problem again, during the test and after", async () => {
+    const r = setup({ sets: [fullSet()] });
+    await start(r);
+    const ref = { id: ID, index: "0" };
+    await r.routes.approach(event(ref, { text: "hash map" }));
+    const sub = bodyOf(await r.routes.run(event(ref, { code: "good", submit: true })));
+    expect(sub.best).toEqual({ passed: 4, total: 5 }); // t2 ("[5,5]") failed
+
+    expect(status(await r.routes.flag(event(ref, { testId: "e1", flagged: true })))).toBe(400); // LeetCode's own examples can't be
+    let s = bodyOf(await r.routes.flag(event(ref, { testId: "t2", flagged: true }))).session;
+    expect(s.problems[0].best).toEqual({ passed: 4, total: 4 });
+    expect(r.mem.sets.get("1")!.flagged).toEqual(["t2"]); // later mock OAs skip it too
+
+    await r.routes.finish(event({ id: ID }, {}));
+    s = bodyOf(await r.routes.flag(event(ref, { testId: "t2", flagged: false }))).session; // Undo, on Results
+    expect(s.problems[0].best).toEqual({ passed: 4, total: 5 });
+    expect(s.summary).toMatchObject({ testsPassed: 4, testsTotal: 5, passedProblems: 1 });
+  });
+
+  it("the problem page can un-flag a test and ask for a rewrite", async () => {
+    const r = setup({ sets: [fullSet({ flagged: ["t2"] })], budget: true });
+    const info = bodyOf(await r.routes.testsInfo(event({ problemId: "1" }))).tests;
+    expect(info).toMatchObject({ status: "full", small: 2, large: 1, flagged: [{ id: "t2", input: "[5,5]\n10" }] });
+    await r.routes.unflag(event({ problemId: "1" }, { testId: "t2" }));
+    expect(r.mem.sets.get("1")!.flagged).toEqual([]);
+    expect(status(await r.routes.rewrite(event({ problemId: "1" }, { slug: "two-sum" })))).toBe(202);
+    expect(r.queued).toEqual([{ problemId: "1", slug: "two-sum", rewrite: true }]);
   });
 });

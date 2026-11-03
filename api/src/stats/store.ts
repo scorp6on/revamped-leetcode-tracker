@@ -3,7 +3,7 @@ import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { DynamoDBDocumentClient, QueryCommand, type QueryCommandInput } from "@aws-sdk/lib-dynamodb";
 import type { Catalog } from "../catalog/types";
 import { INDEX } from "../review/store";
-import type { CatalogSummary, PredictionGrade, StatsAttempt, StatsSchedule } from "./types";
+import type { CatalogSummary, PredictionGrade, StatsAttempt, StatsMockOa, StatsSchedule } from "./types";
 
 // Reads only the attributes listed, each through a #name (some, like "minutes", are reserved words).
 const projection = (fields: string[]) => ({
@@ -59,6 +59,14 @@ export const dynamoStatsStore = (tableName: string, bucket: string) => {
         if (r.status !== "done" || (label !== "correct" && label !== "partial" && label !== "wrong")) return [];
         return [{ problemId: String(r.PK).slice("PROBLEM#".length), attemptCreatedAt: String(r.attemptCreatedAt), label }];
       });
+    },
+
+    // Finished mock OAs only; one still running or canceled isn't a score.
+    async mockOas(): Promise<StatsMockOa[]> {
+      const items = await drawer("MOCKOAS", ["createdAt", "minutes", "count", "summary", "finishedAt"]);
+      return items
+        .filter((m) => m.finishedAt && m.summary)
+        .map((m) => ({ createdAt: m.createdAt, minutes: m.minutes, count: m.count, summary: m.summary })) as StatsMockOa[];
     },
 
     async catalog(): Promise<CatalogSummary> {
