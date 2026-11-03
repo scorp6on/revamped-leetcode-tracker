@@ -1,7 +1,9 @@
-import { NavLink } from "react-router";
+import { Link, NavLink } from "react-router";
 import { cn } from "../lib/utils";
 import { Bell } from "../pending/Bell";
+import { useLeetCodeProfile } from "../profile/useLeetCodeProfile";
 import type { Theme } from "../theme";
+import { Avatar } from "./Avatar";
 import { Button } from "./ui/button";
 
 const MoonIcon = () => (
@@ -35,6 +37,8 @@ export function AppHeader({
   loggedIn: boolean;
   onLogout: () => void;
 }) {
+  const lc = useLeetCodeProfile(loggedIn);
+  const me = typeof lc === "object" ? lc : null;
   return (
     <header className="border-b">
       {/* Wraps onto a second row on narrow phones instead of overflowing. */}
@@ -70,6 +74,12 @@ export function AppHeader({
             <Button variant="outline" size="sm" className="h-11" onClick={onLogout}>
               Log out
             </Button>
+          )}
+          {/* Your LeetCode picture, linking to Profile; a letter until there is one (#61). */}
+          {loggedIn && (
+            <Link to="/profile" aria-label="Your profile" title="Your profile" className="flex size-11 items-center justify-center">
+              <Avatar src={me?.profile?.avatar} name={me?.profile?.name ?? me?.username ?? "Me"} className="size-8 text-[13px]" />
+            </Link>
           )}
         </div>
       </nav>

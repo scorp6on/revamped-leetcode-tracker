@@ -131,7 +131,8 @@ export class AppStack extends cdk.Stack {
     // One API Lambda for every app route (#26, #49), so it stays warm across pages.
     // Waits on LeetCode for problem statements, which can be slow.
     const apiFn = fn("ApiFn", "api.ts", { timeout: cdk.Duration.seconds(10) });
-    // Practice data only: PROBLEM# items, the SYNC record and SUB# submissions, and the DUE /
+    // Practice data only: PROBLEM# items, the SYNC record, SUB# submissions, the saved LeetCode
+    // profile (LCPROFILE, #61), and the DUE /
     // ATTEMPTS / PENDING / AIREVIEWS drawers of GSI1. Never AUTH or HEALTH.
     // A transaction is checked as its parts (Put, Update, ConditionCheck) on each item.
     apiFn.addToRolePolicy(
@@ -144,7 +145,7 @@ export class AppStack extends cdk.Stack {
           "dynamodb:ConditionCheckItem",
         ],
         resources: [table.tableArn],
-        conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["PROBLEM#*", "SYNC", "SUB#*", "BUDGET#*"] } },
+        conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["PROBLEM#*", "SYNC", "SUB#*", "BUDGET#*", "LCPROFILE"] } },
       }),
     );
     apiFn.addToRolePolicy(
@@ -208,6 +209,7 @@ export class AppStack extends cdk.Stack {
     route("/api/budget", apigw.HttpMethod.GET, apiFn);
     route("/api/stats", apigw.HttpMethod.GET, apiFn);
     route("/api/history", apigw.HttpMethod.GET, apiFn);
+    route("/api/leetcode-profile", apigw.HttpMethod.GET, apiFn);
 
     // Public: the extension has no login cookie, so the Ingest Lambda checks its token.
     route("/api/ext/sync", apigw.HttpMethod.POST, ingestFn, true);

@@ -6,6 +6,9 @@ import { dynamoAiStore } from "./ai/store";
 import type { ReviewMessage } from "./ai/types";
 import { makeAttemptHandler } from "./attempt";
 import { json } from "./http";
+import { fetchLeetCodeProfile } from "./lcprofile/leetcode";
+import { makeLcProfileHandler } from "./lcprofile/route";
+import { dynamoLcProfileStore } from "./lcprofile/store";
 import { makePredictHandler } from "./predict";
 import { makeProblemHandler } from "./problem";
 import { fetchProblem } from "./problems/leetcode";
@@ -44,8 +47,9 @@ const ai = makeAiRoutes({
   capUsd: Number(process.env.BUDGET_CAP ?? 0),
   now: Date.now,
 });
+const syncStore = dynamoSyncStore(table);
 const sync = makeSyncRoutes({
-  store: dynamoSyncStore(table),
+  store: syncStore,
   // "Event" = start it and return at once; the page polls for the result.
   runBackup: async () => {
     await lambda.send(new InvokeCommand({ FunctionName: process.env.BACKUP_FN, InvocationType: "Event" }));
@@ -70,5 +74,11 @@ export const handler = makeApiHandler({
   "GET /api/reviews": ai.list,
   "GET /api/budget": ai.budget,
   "GET /api/history": async () => json(200, { attempts: await reviews.history() }),
+  "GET /api/leetcode-profile": makeLcProfileHandler({
+    username: async () => (await syncStore.state()).username,
+    store: dynamoLcProfileStore(table),
+    fetchProfile: fetchLeetCodeProfile,
+    now: Date.now,
+  }),
   "GET /api/stats": makeStatsHandler(dynamoStatsStore(table, process.env.SITE_BUCKET ?? "")),
 });

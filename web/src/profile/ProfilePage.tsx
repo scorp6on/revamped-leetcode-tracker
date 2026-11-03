@@ -11,6 +11,8 @@ import { byDay, calendar, streaks } from "./activity";
 import { Calendar } from "./Calendar";
 import { History } from "./History";
 import { Journal } from "./Journal";
+import { Sidebar } from "./Sidebar";
+import { useLeetCodeProfile } from "./useLeetCodeProfile";
 import { JOURNAL_SECTIONS, type HistoryFilter, type JournalSection } from "./search";
 
 const pick = <T extends string>(v: string | null, allowed: readonly T[]): T | "" =>
@@ -26,6 +28,7 @@ export function ProfilePage() {
   const [params, setParams] = useSearchParams();
   const [attempts, setAttempts] = useState<HistoryAttempt[] | "loading" | "error">(cached ?? "loading");
   const [topicNames, setTopicNames] = useState<Record<string, string>>({});
+  const lc = useLeetCodeProfile();
 
   useEffect(() => {
     let live = true;
@@ -90,86 +93,75 @@ export function ProfilePage() {
     .sort((a, b) => a[1].localeCompare(b[1]));
   const { s } = derived;
   const tiles = [
-    { label: "Current streak", value: days(s.current), note: "a day counts with 1+ attempt" },
+    { label: "Current streak", value: days(s.current), note: "1+ attempt a day" },
     { label: "Longest streak", value: s.longest ? days(s.longest.days) : "0 days", note: s.longest ? `${monthDay(s.longest.from)} – ${monthDay(s.longest.to)}` : "none yet" },
     { label: "Active days", value: String(s.activeDays), note: s.first ? `since ${monthDay(s.first)}` : "none yet" },
     { label: "Attempts", value: String(list.length), note: `on ${derived.problems} problem${derived.problems === 1 ? "" : "s"}` },
   ];
 
   return (
-    <main className="mx-auto flex w-full max-w-[1120px] flex-col gap-6 px-4 py-8 sm:px-6 sm:py-10">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-[28px] font-semibold tracking-tight">Profile</h1>
-        <p className="text-muted-foreground">
-          {s.first ? `Everything you've practiced, since your first attempt on ${shortDate(s.first)}` : "Everything you've practiced"}
-        </p>
+    // Two columns on a wide screen (#61): your LeetCode profile and streaks on the left, the
+    // calendar and tabs on the right. Stacked on a phone.
+    <main className="mx-auto grid w-full max-w-[1120px] items-start gap-6 px-4 py-8 sm:px-6 sm:py-10 lg:grid-cols-[260px_minmax(0,1fr)]">
+      <h1 className="sr-only">Profile</h1>
+      <Sidebar lc={lc} first={s.first} tiles={tiles} />
+      <div className="flex min-w-0 flex-col gap-5">
+        {attempts === "loading" && <p className="text-muted-foreground">Loading…</p>}
+        {attempts === "error" && <p role="alert">Couldn't load your history. Refresh to try again.</p>}
+        {Array.isArray(attempts) && (
+          <>
+            <Calendar
+              weeks={derived.weeks}
+              total={derived.inYear}
+              attemptsOn={(d) => derived.grouped.get(d) ?? []}
+              selected={day}
+              onSelect={(d) => update({ day: d ?? "" }, true)}
+            />
+
+            <div role="tablist" aria-label="Profile" className="flex gap-1 border-b">
+              {(["history", "journal"] as const).map((t) => (
+                <button
+                  key={t}
+                  role="tab"
+                  type="button"
+                  aria-selected={tab === t}
+                  onClick={() => update({ tab: t === "history" ? "" : t })}
+                  className={cn(
+                    "-mb-px h-11 border-b-2 px-3.5 font-medium",
+                    tab === t ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {t === "history" ? "History" : "Notes journal"}
+                </button>
+              ))}
+            </div>
+
+            {tab === "history" ? (
+              <History
+                attempts={attempts}
+                isReview={(a) => derived.reviews.has(a)}
+                topics={topics}
+                filter={filter}
+                onFilter={(f) =>
+                  update(
+                    { q: f.q ?? filter.q, outcome: f.outcome ?? filter.outcome, d: f.difficulty ?? filter.difficulty, tag: f.tag ?? filter.tag },
+                    f.q !== undefined, // typing replaces the history entry instead of adding one per key
+                  )
+                }
+              />
+            ) : (
+              <Journal
+                attempts={attempts}
+                query={params.get("jq") ?? ""}
+                section={section}
+                onChange={(c) =>
+                  update({ jq: c.query ?? params.get("jq") ?? "", sec: c.section ?? section }, c.query !== undefined)
+                }
+              />
+            )}
+          </>
+        )}
       </div>
-
-      {attempts === "loading" && <p className="text-muted-foreground">Loading…</p>}
-      {attempts === "error" && <p role="alert">Couldn't load your history. Refresh to try again.</p>}
-      {Array.isArray(attempts) && (
-        <>
-          <section aria-label="Streaks" className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            {tiles.map((t) => (
-              <div key={t.label} className="flex flex-col gap-0.5 rounded-[10px] border px-4 py-3.5">
-                <span className="text-[13px] text-muted-foreground">{t.label}</span>
-                <span className="text-[26px] font-semibold tracking-tight tabular-nums">{t.value}</span>
-                <span className="text-xs text-muted-foreground">{t.note}</span>
-              </div>
-            ))}
-          </section>
-
-          <Calendar
-            weeks={derived.weeks}
-            total={derived.inYear}
-            attemptsOn={(d) => derived.grouped.get(d) ?? []}
-            selected={day}
-            onSelect={(d) => update({ day: d ?? "" }, true)}
-          />
-
-          <div role="tablist" aria-label="Profile" className="flex gap-1 border-b">
-            {(["history", "journal"] as const).map((t) => (
-              <button
-                key={t}
-                role="tab"
-                type="button"
-                aria-selected={tab === t}
-                onClick={() => update({ tab: t === "history" ? "" : t })}
-                className={cn(
-                  "-mb-px h-11 border-b-2 px-3.5 font-medium",
-                  tab === t ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {t === "history" ? "History" : "Notes journal"}
-              </button>
-            ))}
-          </div>
-
-          {tab === "history" ? (
-            <History
-              attempts={attempts}
-              isReview={(a) => derived.reviews.has(a)}
-              topics={topics}
-              filter={filter}
-              onFilter={(f) =>
-                update(
-                  { q: f.q ?? filter.q, outcome: f.outcome ?? filter.outcome, d: f.difficulty ?? filter.difficulty, tag: f.tag ?? filter.tag },
-                  f.q !== undefined, // typing replaces the history entry instead of adding one per key
-                )
-              }
-            />
-          ) : (
-            <Journal
-              attempts={attempts}
-              query={params.get("jq") ?? ""}
-              section={section}
-              onChange={(c) =>
-                update({ jq: c.query ?? params.get("jq") ?? "", sec: c.section ?? section }, c.query !== undefined)
-              }
-            />
-          )}
-        </>
-      )}
     </main>
   );
 }
